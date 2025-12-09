@@ -1,0 +1,193 @@
+# Spring Boot 应用配置
+spring:
+  application:
+    name: sapiece-gateway  # 应用名称
+
+  # 优雅停机配置
+  lifecycle:
+    timeout-per-shutdown-phase: 30s  # 每个停机阶段的超时时间
+
+  # R2DBC 响应式数据库配置
+  r2dbc:
+    url: r2dbc:mysql://localhost:3306/product_test?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai
+    username: root
+    password: SAPiece@zll9
+    pool:
+      initial-size: 10        # 初始连接池大小
+      max-size: 50           # 最大连接池大小
+      max-idle-time: 30m     # 最大空闲时间
+
+  # Redis 响应式配置（用于限流和缓存）
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password:
+      database: 0
+      timeout: 3000ms
+      lettuce:
+        pool:
+          max-active: 20     # 最大活跃连接数
+          max-idle: 10       # 最大空闲连接数
+          min-idle: 5        # 最小空闲连接数
+          max-wait: 3000ms   # 最大等待时间
+
+  # Spring Cloud Gateway 配置
+  cloud:
+    gateway:
+      # WebFlux 服务器配置 (Spring Cloud Gateway 2025.x 新结构)
+      server:
+        webflux:
+          # ============================================================
+          # 路由配置已迁移到数据库动态管理
+          # 表名: sys_gateway_route
+          # 管理API: /admin/route/**
+          #
+          # 路由会在以下情况自动刷新:
+          # 1. 新增路由
+          # 2. 修改路由
+          # 3. 删除路由
+          # 4. 启用/禁用路由
+          # 5. 调用 POST /admin/route/refresh 手动刷新
+          # ============================================================
+
+          # 全局跨域配置
+          globalcors:
+            cors-configurations:
+              '[/**]':
+                allowed-origin-patterns: "*"
+                allowed-methods: "*"
+                allowed-headers: "*"
+                allow-credentials: true
+                max-age: 3600
+
+          # 全局默认过滤器
+          default-filters:
+            - AddRequestHeader=X-Gateway-Name, SAPiece-Gateway
+
+# JWT 配置
+jwt:
+  # JWT密钥（生产环境请使用更复杂的密钥并通过环境变量注入）
+  secret: SAPiece-Gateway-Secret-Key-2025-For-Authentication-And-Authorization-Security
+  # Token过期时间（毫秒）7天
+  expiration: 604800000
+  # Token刷新时间（毫秒）3天
+  refresh: 259200000
+
+# 限流配置（增强版）
+rate-limit:
+  enabled: true                        # 是否启用限流
+  strategy: route                      # 限流策略：ip / route / user
+
+  # IP级别限流配置
+  ip:
+    qps: 100                          # IP级别每秒请求数限制
+    capacity: 200                     # IP级别令牌桶容量
+
+  # 路由级别限流配置
+  route:
+    default-qps: 50                   # 路由级别默认QPS
+    default-capacity: 100             # 路由级别默认容量
+    # 具体路由配置在 RouteBasedRateLimitStrategy 中
+
+  # 用户级别限流配置
+  user:
+    default-qps: 50                   # 用户级别默认QPS
+    default-capacity: 100             # 用户级别默认容量
+    # 具体角色配置在 UserBasedRateLimitStrategy 中
+
+# IP黑白名单配置
+ip-filter:
+  # IP黑名单配置
+  blacklist-enabled: false                    # 是否启用IP黑名单
+  blacklist:                                  # IP黑名单列表
+    # - 192.168.1.100                         # 单个IP
+    # - 10.0.0.0/8                            # IP段（CIDR格式）
+
+  # IP白名单配置
+  whitelist-enabled: false                    # 是否启用IP白名单
+  whitelist:                                  # IP白名单列表
+    # - 192.168.1.0/24                        # 允许整个局域网
+    # - 127.0.0.1                             # 允许本机访问
+
+# 参数签名验证配置
+signature:
+  enabled: false                              # 是否启用签名验证
+  secret: SAPiece-Signature-Secret-Key-2025  # 签名密钥（生产环境建议通过环境变量注入）
+  algorithm: MD5                              # 签名算法（MD5、SHA256）
+  timestamp-validity: 300                     # 时间戳有效期（秒），默认5分钟
+
+# 响应缓存配置
+response-cache:
+  enabled: true                               # 是否启用响应缓存
+  ttl: 300                                    # 缓存过期时间（秒），默认5分钟
+
+# 请求重试配置
+retry:
+  enabled: false                               # 是否启用请求重试
+
+# 灰度发布配置
+gray:
+  enabled: true                                # 是否启用灰度发布
+  header-name: X-Gray-Tag                      # 灰度Header名称（用于Header策略）
+  param-name: gray                             # 灰度参数名称（用于Param策略）
+
+# 审计日志配置
+audit:
+  enabled: true                                # 是否启用审计日志
+  async: true                                  # 是否异步记录（推荐开启，不影响主流程性能）
+  retain-days: 90                              # 日志保留天数（超过此天数的日志会被清理）
+
+# OAuth2第三方登录配置
+# 注意：实际的OAuth配置存储在数据库表 sys_oauth_config 中
+# 这里只是开关和默认回调地址配置
+oauth2:
+  enabled: true                                # 是否启用OAuth2登录
+  base-redirect-uri: http://localhost:8080/auth/oauth2/callback  # 回调地址基础路径
+
+# 服务器配置
+server:
+  port: 8080             # 服务端口
+  http2:
+    enabled: true        # 启用HTTP/2
+  shutdown: graceful     # 启用优雅停机
+
+# 日志配置
+logging:
+  level:
+    root: INFO
+    com.sapiece.nova.sapiecegateway: DEBUG
+    org.springframework.r2dbc: DEBUG
+    org.springframework.security: DEBUG
+    org.springframework.cloud.gateway: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{50} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{50} - %msg%n"
+  file:
+    name: logs/sapiece-gateway.log
+  logback:
+    rollingpolicy:
+      max-file-size: 10MB
+      max-history: 30
+
+# Actuator 监控配置
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: always
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+
+# 应用信息
+info:
+  app:
+    name: SAPiece Gateway
+    description: 基于WebFlux的响应式API网关，支持JWT认证、权限控制、接口限流、日志记录等功能
+    version: 1.0.0
+    author: SAPiece
