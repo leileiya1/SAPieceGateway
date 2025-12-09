@@ -13,6 +13,7 @@ import reactor.core.publisher.Mono;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * 基于用户的限流策略
@@ -87,8 +88,11 @@ public class UserBasedRateLimitStrategy implements RateLimitStrategy {
         return ReactiveSecurityContextHolder.getContext()
                 .map(SecurityContext::getAuthentication)
                 .filter(Authentication::isAuthenticated)
-                .map(Authentication::getAuthorities)
-                .doOnNext(authorities -> log.debug("获取到用户角色: {}", authorities));
+                .flatMap(authentication -> {
+                    Collection<? extends GrantedAuthority> authorities = authentication.getAuthorities();
+                    log.debug("获取到用户角色: {}", authorities);
+                    return Mono.justOrEmpty(authorities);
+                });
     }
 
     /**
@@ -102,7 +106,7 @@ public class UserBasedRateLimitStrategy implements RateLimitStrategy {
         return authorities.stream()
                 .map(GrantedAuthority::getAuthority)
                 .map(roleConfigs::get)
-                .filter(config -> config != null)
+                .filter(Objects::nonNull)
                 .mapToInt(config -> config.qps)
                 .max()
                 .orElse(defaultQps);
@@ -119,7 +123,7 @@ public class UserBasedRateLimitStrategy implements RateLimitStrategy {
         return authorities.stream()
                 .map(GrantedAuthority::getAuthority)
                 .map(roleConfigs::get)
-                .filter(config -> config != null)
+                .filter(Objects::nonNull)
                 .mapToInt(config -> config.capacity)
                 .max()
                 .orElse(defaultCapacity);
@@ -143,15 +147,8 @@ public class UserBasedRateLimitStrategy implements RateLimitStrategy {
     }
 
     /**
-     * 角色限流配置内部类
-     */
-    private static class RoleLimitConfig {
-        final int qps;
-        final int capacity;
-
-        RoleLimitConfig(int qps, int capacity) {
-            this.qps = qps;
-            this.capacity = capacity;
-        }
+         * 角色限流配置内部类
+         */
+        private record RoleLimitConfig(int qps, int capacity) {
     }
 }
