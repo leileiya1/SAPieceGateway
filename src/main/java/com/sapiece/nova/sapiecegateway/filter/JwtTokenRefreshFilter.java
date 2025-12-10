@@ -16,21 +16,22 @@ import org.springframework.web.server.WebFilterChain;
 import reactor.core.publisher.Mono;
 
 /**
- * JWT Token 自动刷新过滤器
+ * JWT Token 自动刷新过滤器（双Token模式）
  *
  * 功能：
- * 1. 检查请求中的 JWT Token 是否即将过期
- * 2. 如果即将过期且仍然有效，生成新的 Token
- * 3. 将新 Token 添加到响应头中返回给客户端
+ * 1. 检查请求中的 Access Token 是否即将过期
+ * 2. 如果即将过期（剩余时间 < 5分钟），通过响应头通知客户端需要刷新
+ * 3. 客户端收到通知后，使用 Refresh Token 调用 /auth/refresh/token 接口获取新Token
  *
- * 实现原理：
- * - 在响应写入前检查并刷新 Token
- * - 使用 ServerHttpResponse.beforeCommit() 确保在响应提交前执行
- * - 不干扰认证流程，只负责 Token 刷新
+ * 双Token模式说明：
+ * - Access Token: 短期有效（30分钟），用于API访问认证
+ * - Refresh Token: 长期有效（7天），用于刷新Access Token
+ * - 当Access Token即将过期时，通过响应头 X-Token-Expired-Soon: true 通知客户端
+ * - 客户端收到通知后，应使用Refresh Token调用刷新接口
  *
  * 客户端处理：
- * - 客户端收到响应后，检查响应头中的 X-New-Token
- * - 如果存在新 Token，替换本地存储的旧 Token
+ * - 客户端收到响应后，检查响应头中的 X-Token-Expired-Soon
+ * - 如果为 true，使用 Refresh Token 调用 POST /auth/refresh/token 获取新Token
  *
  * @author SAPiece
  * @since 2025-11-25
@@ -54,9 +55,19 @@ public class JwtTokenRefreshFilter implements WebFilter, Ordered {
     private static final String TOKEN_PREFIX = "Bearer ";
 
     /**
-     * 新 Token 响应头名称
+     * Token即将过期通知响应头
      */
-    private static final String NEW_TOKEN_HEADER = "X-New-Token";
+    private static final String TOKEN_EXPIRED_SOON_HEADER = "X-Token-Expired-Soon";
+
+    /**
+     * Access Token剩余有效期响应头（秒）
+     */
+    private static final String TOKEN_EXPIRES_IN_HEADER = "X-Token-Expires-In";
+
+    /**
+     * Token即将过期的阈值（毫秒）默认5分钟
+     */
+    private static final long TOKEN_EXPIRE_SOON_THRESHOLD = 5 * 60 * 1000;
 
     /**
      * 过滤器优先级
@@ -108,32 +119,38 @@ public class JwtTokenRefreshFilter implements WebFilter, Ordered {
     }
 
     /**
-     * 检查 Token 是否需要刷新，如果需要则生成新 Token
+     * 检查 Access Token 是否即将过期，如果即将过期则通知客户端刷新
      */
     private Mono<Void> refreshTokenIfNeeded(String token, ServerHttpResponse response, String path) {
         try {
             // 1. 检查 Token 是否仍然有效
             if (!jwtUtil.validateToken(token)) {
-                log.debug("Token 无效或已过期，不刷新, path: {}", path);
+                log.debug("Token 无效或已过期, path: {}", path);
                 return Mono.empty();
             }
 
-            // 2. 检查 Token 是否需要刷新
-            if (!jwtUtil.shouldRefresh(token)) {
-                log.debug("Token 不需要刷新, path: {}", path);
+            // 2. 只处理 Access Token
+            if (!jwtUtil.isAccessToken(token)) {
+                log.debug("不是 Access Token，跳过刷新检查, path: {}", path);
                 return Mono.empty();
             }
 
-            // 3. 生成新 Token
-            String newToken = jwtUtil.refreshToken(token);
+            // 3. 计算 Token 剩余有效期
+            io.jsonwebtoken.Claims claims = jwtUtil.parseToken(token);
+            long expirationTime = claims.getExpiration().getTime();
+            long currentTime = System.currentTimeMillis();
+            long timeLeft = expirationTime - currentTime;
 
-            // 4. 将新 Token 添加到响应头
-            response.getHeaders().set(NEW_TOKEN_HEADER, newToken);
-
-            log.info("Token 已刷新, path: {}, 新 Token 已添加到响应头 {}", path, NEW_TOKEN_HEADER);
+            // 4. 如果剩余时间小于阈值（5分钟），通知客户端刷新
+            if (timeLeft < TOKEN_EXPIRE_SOON_THRESHOLD && timeLeft > 0) {
+                response.getHeaders().set(TOKEN_EXPIRED_SOON_HEADER, "true");
+                response.getHeaders().set(TOKEN_EXPIRES_IN_HEADER, String.valueOf(timeLeft / 1000));
+                log.info("Access Token 即将过期, path: {}, 剩余时间: {}秒, 已通知客户端刷新",
+                        path, timeLeft / 1000);
+            }
 
         } catch (Exception e) {
-            log.error("Token 刷新失败, path: {}, error: {}", path, e.getMessage());
+            log.error("Token 刷新检查失败, path: {}, error: {}", path, e.getMessage());
         }
 
         return Mono.empty();

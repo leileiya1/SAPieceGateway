@@ -104,7 +104,13 @@ public class JwtSecurityContextRepository implements ServerSecurityContextReposi
                 return Mono.empty();
             }
 
-            // 2. 检查 Token 是否在黑名单中
+            // 2. 验证是否为 Access Token（双Token模式下，只有Access Token可用于API认证）
+            if (!jwtUtil.isAccessToken(token)) {
+                log.warn("【JWT认证】提供的不是Access Token, path: {}", path);
+                return Mono.empty();
+            }
+
+            // 3. 检查 Token 是否在黑名单中
             return tokenBlacklistService.isBlacklisted(token)
                     .flatMap(isBlacklisted -> {
                         if (isBlacklisted) {
@@ -112,10 +118,10 @@ public class JwtSecurityContextRepository implements ServerSecurityContextReposi
                             return Mono.empty();
                         }
 
-                        // 3. 从 Token 中提取用户 ID
+                        // 4. 从 Token 中提取用户 ID
                         Long userId = jwtUtil.getUserIdFromToken(token);
 
-                        // 4. 检查用户是否在黑名单中
+                        // 5. 检查用户是否在黑名单中
                         return tokenBlacklistService.isUserBlacklisted(userId)
                                 .flatMap(isUserBlacklisted -> {
                                     if (isUserBlacklisted) {
@@ -123,10 +129,10 @@ public class JwtSecurityContextRepository implements ServerSecurityContextReposi
                                         return Mono.empty();
                                     }
 
-                                    // 5. 加载用户详情
+                                    // 6. 加载用户详情
                                     return userDetailsService.findByUserId(userId)
                                             .flatMap(userDetails -> {
-                                                // 6. 检查 Token 是否在密码修改之前签发
+                                                // 7. 检查 Token 是否在密码修改之前签发
                                                 if (userDetails instanceof CustomUserDetails customUserDetails) {
                                                     if (jwtUtil.isTokenIssuedBeforePasswordChange(token,
                                                             customUserDetails.getPasswordLastChangedAt())) {
@@ -135,14 +141,14 @@ public class JwtSecurityContextRepository implements ServerSecurityContextReposi
                                                     }
                                                 }
 
-                                                // 7. 创建认证对象
+                                                // 8. 创建认证对象
                                                 Authentication authentication = new UsernamePasswordAuthenticationToken(
                                                         userDetails,
                                                         null,
                                                         userDetails.getAuthorities()
                                                 );
 
-                                                // 8. 创建并返回 SecurityContext
+                                                // 9. 创建并返回 SecurityContext
                                                 SecurityContext context = new SecurityContextImpl(authentication);
                                                 return Mono.just(context);
                                             });

@@ -78,16 +78,16 @@ public class AuthController {
     }
 
     /**
-     * 刷新Token接口
+     * 刷新Token接口（旧接口，保留兼容性）
      *
      * @param token 旧Token
      * @return 新Token
      */
-    @Operation(summary = "刷新Token", description = "使用旧Token换取新Token")
+    @Operation(summary = "刷新Token（旧接口）", description = "使用旧Token换取新Token，建议使用/auth/refresh/token接口")
     @Parameter(name = "Authorization", description = "旧Token", required = true, example = "Bearer eyJhbGciOiJIUzI1NiJ9...")
     @PostMapping("/refresh")
     public Mono<Result<Map<String, String>>> refreshToken(@RequestHeader("Authorization") String token) {
-        log.info("Token刷新请求");
+        log.info("Token刷新请求（旧接口）");
 
         return authService.refreshToken(token)
                 .map(newToken -> {
@@ -97,6 +97,25 @@ public class AuthController {
                 })
                 .onErrorResume(e -> {
                     log.error("Token刷新失败, error: {}", e.getMessage());
+                    return Mono.just(Result.error(e.getMessage()));
+                });
+    }
+
+    /**
+     * 使用Refresh Token刷新Access Token（双Token模式）
+     *
+     * @param refreshTokenRequest 包含refreshToken的请求体
+     * @return 新的Token对（accessToken + refreshToken）
+     */
+    @Operation(summary = "刷新Access Token", description = "使用Refresh Token换取新的Access Token和Refresh Token（双Token模式）")
+    @PostMapping("/refresh/token")
+    public Mono<Result<Map<String, Object>>> refreshAccessToken(@RequestBody RefreshTokenRequest refreshTokenRequest) {
+        log.info("Access Token刷新请求（双Token模式）");
+
+        return authService.refreshAccessToken(refreshTokenRequest.getRefreshToken())
+                .map(tokenData -> Result.success("Token刷新成功", tokenData))
+                .onErrorResume(e -> {
+                    log.error("Access Token刷新失败, error: {}", e.getMessage());
                     return Mono.just(Result.error(e.getMessage()));
                 });
     }
@@ -138,5 +157,18 @@ public class AuthController {
          */
         @Schema(description = "密码", example = "123456", requiredMode = Schema.RequiredMode.REQUIRED)
         private String password;
+    }
+
+    /**
+     * 刷新Token请求DTO
+     */
+    @Data
+    @Schema(description = "刷新Token请求参数")
+    public static class RefreshTokenRequest {
+        /**
+         * Refresh Token
+         */
+        @Schema(description = "Refresh Token", example = "eyJhbGciOiJIUzI1NiJ9...", requiredMode = Schema.RequiredMode.REQUIRED)
+        private String refreshToken;
     }
 }

@@ -55,10 +55,10 @@ public class CorsConfig {
         config.addExposedHeader(HttpHeaders.AUTHORIZATION);
         config.addExposedHeader("X-Request-ID");
         config.addExposedHeader("X-Total-Count");
-
+        config.addExposedHeader("X-Token-Expired-Soon");
+        config.addExposedHeader("X-Token-Expires-In");
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);
-
         log.info("CORS配置完成: 允许所有源、所有方法、所有请求头");
         return new CorsWebFilter(source);
     }

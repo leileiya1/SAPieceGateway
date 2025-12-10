@@ -45,6 +45,25 @@ public class JwtUtil {
     private Long refreshTime;
 
     /**
+     * Access Token过期时间（毫秒）默认30分钟
+     */
+    @Value("${jwt.access-token-expiration:1800000}")
+    private Long accessTokenExpiration;
+
+    /**
+     * Refresh Token过期时间（毫秒）默认7天
+     */
+    @Value("${jwt.refresh-token-expiration:604800000}")
+    private Long refreshTokenExpiration;
+
+    /**
+     * Token类型常量
+     */
+    public static final String TOKEN_TYPE_ACCESS = "access";
+    public static final String TOKEN_TYPE_REFRESH = "refresh";
+    private static final String CLAIM_TOKEN_TYPE = "tokenType";
+
+    /**
      * 生成SecretKey
      *
      * @return SecretKey
@@ -54,37 +73,132 @@ public class JwtUtil {
     }
 
     /**
-     * 生成JWT Token
+     * 生成JWT Token（兼容旧方法，默认生成Access Token）
      *
-     * @param userId      用户ID
-     * @param userName    用户名
-     * @param roles       角色列表
-     * @param permissions 权限列表
+     * @param userId   用户ID
+     * @param userName 用户名
      * @return JWT Token
      */
-    public String generateToken(Long userId, String userName, List<String> roles, List<String> permissions) {
-        log.debug("生成JWT Token, userId: {}, userName: {}", userId, userName);
+    public String generateToken(Long userId, String userName) {
+        return generateAccessToken(userId, userName);
+    }
+
+    /**
+     * 生成Access Token（短期有效，用于API访问）
+     * 精简版：JWT只存储userId和userName，权限信息存储在Redis中
+     *
+     * @param userId   用户ID
+     * @param userName 用户名
+     * @return Access Token
+     */
+    public String generateAccessToken(Long userId, String userName) {
+        log.debug("生成Access Token, userId: {}, userName: {}", userId, userName);
         try {
             Date now = new Date();
-            Date expiryDate = new Date(now.getTime() + expiration);
+            Date expiryDate = new Date(now.getTime() + accessTokenExpiration);
 
             String token = Jwts.builder()
-                    .subject(userName) // 主题：用户名
-                    .claim("userId", userId) // 自定义声明：用户ID
-                    .claim("userName", userName) // 自定义声明：用户名
-                    .claim("roles", roles) // 自定义声明：角色列表
-                    .claim("permissions", permissions) // 自定义声明：权限列表
-                    .issuedAt(now) // 签发时间
-                    .expiration(expiryDate) // 过期时间
-                    .signWith(getSecretKey()) // 签名
+                    .subject(userName)
+                    .claim("userId", userId)
+                    .claim(CLAIM_TOKEN_TYPE, TOKEN_TYPE_ACCESS)
+                    .issuedAt(now)
+                    .expiration(expiryDate)
+                    .signWith(getSecretKey())
                     .compact();
 
-            log.info("成功生成JWT Token, userId: {}, userName: {}, expiryDate: {}", userId, userName, expiryDate);
+            log.info("成功生成Access Token, userId: {}, userName: {}, expiryDate: {}", userId, userName, expiryDate);
             return token;
         } catch (Exception e) {
-            log.error("生成JWT Token失败, userId: {}, userName: {}, error: {}", userId, userName, e.getMessage());
-            throw new RuntimeException("生成JWT Token失败", e);
+            log.error("生成Access Token失败, userId: {}, userName: {}, error: {}", userId, userName, e.getMessage());
+            throw new RuntimeException("生成Access Token失败", e);
         }
+    }
+
+    /**
+     * 生成Refresh Token（长期有效，用于刷新Access Token）
+     *
+     * @param userId   用户ID
+     * @param userName 用户名
+     * @return Refresh Token
+     */
+    public String generateRefreshToken(Long userId, String userName) {
+        log.debug("生成Refresh Token, userId: {}, userName: {}", userId, userName);
+        try {
+            Date now = new Date();
+            Date expiryDate = new Date(now.getTime() + refreshTokenExpiration);
+
+            String token = Jwts.builder()
+                    .subject(userName)
+                    .claim("userId", userId)
+                    .claim("userName", userName)
+                    .claim(CLAIM_TOKEN_TYPE, TOKEN_TYPE_REFRESH)
+                    .issuedAt(now)
+                    .expiration(expiryDate)
+                    .signWith(getSecretKey())
+                    .compact();
+
+            log.info("成功生成Refresh Token, userId: {}, userName: {}, expiryDate: {}", userId, userName, expiryDate);
+            return token;
+        } catch (Exception e) {
+            log.error("生成Refresh Token失败, userId: {}, userName: {}, error: {}", userId, userName, e.getMessage());
+            throw new RuntimeException("生成Refresh Token失败", e);
+        }
+    }
+
+    /**
+     * 生成双Token（Access Token + Refresh Token）
+     * 精简版：不再传入roles和permissions
+     *
+     * @param userId   用户ID
+     * @param userName 用户名
+     * @return 包含accessToken和refreshToken的Map
+     */
+    public Map<String, String> generateTokenPair(Long userId, String userName) {
+        log.debug("生成双Token, userId: {}, userName: {}", userId, userName);
+        String accessToken = generateAccessToken(userId, userName);
+        String refreshToken = generateRefreshToken(userId, userName);
+        return Map.of(
+                "accessToken", accessToken,
+                "refreshToken", refreshToken
+        );
+    }
+
+    /**
+     * 获取Token类型
+     *
+     * @param token JWT Token
+     * @return Token类型（access/refresh）
+     */
+    public String getTokenType(String token) {
+        try {
+            Claims claims = parseToken(token);
+            String tokenType = claims.get(CLAIM_TOKEN_TYPE, String.class);
+            // 兼容旧Token（没有tokenType字段的视为access token）
+            return tokenType != null ? tokenType : TOKEN_TYPE_ACCESS;
+        } catch (Exception e) {
+            log.error("获取Token类型失败, error: {}", e.getMessage());
+            return TOKEN_TYPE_ACCESS;
+        }
+    }
+
+    /**
+     * 判断是否为Access Token
+     *
+     * @param token JWT Token
+     * @return 是否为Access Token
+     */
+    public boolean isAccessToken(String token) {
+        return TOKEN_TYPE_ACCESS.equals(getTokenType(token));
+    }
+
+    /**
+     * 判断是否为Refresh Token
+     *
+     * @param token JWT Token
+     * @return 是否为Refresh Token
+     */
+    public boolean isRefreshToken(String token) {
+        return TOKEN_TYPE_REFRESH.equals(getTokenType(token));
     }
 
     /**
@@ -126,37 +240,14 @@ public class JwtUtil {
 
     /**
      * 从Token中获取用户名
+     * 精简版JWT从subject获取用户名
      *
      * @param token JWT Token
      * @return 用户名
      */
     public String getUserNameFromToken(String token) {
         Claims claims = parseToken(token);
-        return claims.get("userName", String.class);
-    }
-
-    /**
-     * 从Token中获取角色列表
-     *
-     * @param token JWT Token
-     * @return 角色列表
-     */
-    @SuppressWarnings("unchecked")
-    public List<String> getRolesFromToken(String token) {
-        Claims claims = parseToken(token);
-        return claims.get("roles", List.class);
-    }
-
-    /**
-     * 从Token中获取权限列表
-     *
-     * @param token JWT Token
-     * @return 权限列表
-     */
-    @SuppressWarnings("unchecked")
-    public List<String> getPermissionsFromToken(String token) {
-        Claims claims = parseToken(token);
-        return claims.get("permissions", List.class);
+        return claims.getSubject();
     }
 
     /**
@@ -257,7 +348,7 @@ public class JwtUtil {
     }
 
     /**
-     * 刷新Token
+     * 刷新Token（精简版）
      *
      * @param token 旧Token
      * @return 新Token
@@ -265,13 +356,10 @@ public class JwtUtil {
     public String refreshToken(String token) {
         log.debug("刷新JWT Token");
         try {
-            Claims claims = parseToken(token);
             Long userId = getUserIdFromToken(token);
             String userName = getUserNameFromToken(token);
-            List<String> roles = getRolesFromToken(token);
-            List<String> permissions = getPermissionsFromToken(token);
 
-            String newToken = generateToken(userId, userName, roles, permissions);
+            String newToken = generateToken(userId, userName);
             log.info("成功刷新JWT Token, userId: {}, userName: {}", userId, userName);
             return newToken;
         } catch (Exception e) {
@@ -281,7 +369,8 @@ public class JwtUtil {
     }
 
     /**
-     * 从Token中提取所有信息
+     * 从Token中提取基本信息（精简版）
+     * 不再包含roles和permissions，这些信息从Redis获取
      *
      * @param token JWT Token
      * @return Token信息Map
@@ -290,9 +379,8 @@ public class JwtUtil {
         Claims claims = parseToken(token);
         return Map.of(
                 "userId", claims.get("userId"),
-                "userName", claims.get("userName"),
-                "roles", claims.get("roles"),
-                "permissions", claims.get("permissions"),
+                "userName", claims.getSubject(),
+                "tokenType", getTokenType(token),
                 "issuedAt", claims.getIssuedAt(),
                 "expiration", claims.getExpiration()
         );

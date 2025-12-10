@@ -335,8 +335,7 @@ public class OAuth2ServiceImpl implements OAuth2Service {
                             .flatMap(roles -> menuService.findPermissionCodesByUserId(user.getId()).collectList()
                                     .map(permissions -> {
                                         // 生成JWT Token
-                                        String token = jwtUtil.generateToken(user.getId(), user.getUserName(),
-                                                roles, permissions);
+                                        String token = jwtUtil.generateToken(user.getId(), user.getUserName());
                                         // 构建返回结果
                                         Map<String, Object> result = new HashMap<>();
                                         result.put("needBind", false);

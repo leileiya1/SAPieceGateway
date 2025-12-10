@@ -65,14 +65,16 @@ spring:
           default-filters:
             - AddRequestHeader=X-Gateway-Name, SAPiece-Gateway
 
-# JWT 配置
+# JWT 配置（双Token模式）
 jwt:
   # JWT密钥（生产环境请使用更复杂的密钥并通过环境变量注入）
   secret: SAPiece-Gateway-Secret-Key-2025-For-Authentication-And-Authorization-Security
-  # Token过期时间（毫秒）7天
+  # 旧配置（保留兼容性）
   expiration: 604800000
-  # Token刷新时间（毫秒）3天
   refresh: 259200000
+  # 双Token配置
+  access-token-expiration: 1800000      # Access Token过期时间（毫秒）30分钟
+  refresh-token-expiration: 604800000   # Refresh Token过期时间（毫秒）7天
 
 # 限流配置（增强版）
 rate-limit:

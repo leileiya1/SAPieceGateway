@@ -32,12 +32,20 @@ public interface AuthService {
     Mono<Boolean> logout(String token);
 
     /**
-     * 刷新Token
+     * 刷新Token（旧方法，保留兼容性）
      *
      * @param token 旧Token
      * @return 新Token
      */
     Mono<String> refreshToken(String token);
+
+    /**
+     * 使用Refresh Token刷新Access Token（双Token模式）
+     *
+     * @param refreshToken Refresh Token
+     * @return 新的Token对（accessToken + refreshToken）
+     */
+    Mono<Map<String, Object>> refreshAccessToken(String refreshToken);
 
     /**
      * 获取Token信息
