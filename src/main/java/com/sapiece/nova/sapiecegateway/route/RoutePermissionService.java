@@ -1,5 +1,7 @@
 package com.sapiece.nova.sapiecegateway.route;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sapiece.nova.sapiecegateway.entity.SysGatewayRoute;
 import com.sapiece.nova.sapiecegateway.repository.SysGatewayRouteRepository;
 import lombok.RequiredArgsConstructor;
@@ -8,12 +10,13 @@ import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.stereotype.Service;
 import org.springframework.util.AntPathMatcher;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.List;
-import java.util.Set;
+import java.time.Duration;
+import java.util.*;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 /**
@@ -29,66 +32,37 @@ import java.util.stream.Collectors;
 public class RoutePermissionService {
 
     private final SysGatewayRouteRepository routeRepository;
+    private final ObjectMapper objectMapper;
     private final AntPathMatcher pathMatcher = new AntPathMatcher();
+    private final AtomicReference<List<RoutePredicateHolder>> routeCache =
+            new AtomicReference<>(Collections.emptyList());
+    private final AtomicLong lastRouteCacheRefresh = new AtomicLong(0L);
+    private static final Duration ROUTE_CACHE_TTL = Duration.ofSeconds(30);
 
     /**
-     * 根据请求路径匹配路由配置
-     *
-     * @param requestPath 请求路径
-     * @return 匹配的路由配置
+     * 根据请求路径和方法匹配路由配置
      */
-    public Mono<SysGatewayRoute> matchRoute(String requestPath) {
-        return routeRepository.findAllEnabled()
-                .filter(route -> {
-                    // 从 predicates 中提取 Path 配置
-                    String pathPattern = extractPathPattern(route.getPredicates());
-                    if (pathPattern == null) {
-                        return false;
-                    }
-                    return pathMatcher.match(pathPattern, requestPath);
-                })
-                .sort((a, b) -> {
-                    // 按匹配精确度排序
-                    String patternA = extractPathPattern(a.getPredicates());
-                    String patternB = extractPathPattern(b.getPredicates());
-                    return Integer.compare(
-                            calculateMatchScore(patternB, requestPath),
-                            calculateMatchScore(patternA, requestPath)
+    public Mono<SysGatewayRoute> matchRoute(String requestPath, String method) {
+        String normalizedPath = (requestPath == null || requestPath.isBlank()) ? "/" : requestPath;
+        String normalizedMethod = method != null ? method.toUpperCase(java.util.Locale.ROOT) : null;
+
+        return loadRouteCache()
+                .flatMapMany(Flux::fromIterable)
+                .filter(holder -> holder.matches(normalizedPath, normalizedMethod, pathMatcher))
+                .sort((h1, h2) -> {
+                    int scoreCompare = Integer.compare(
+                            h2.bestMatchScore(normalizedPath),
+                            h1.bestMatchScore(normalizedPath)
                     );
-                })
-                .next()
-                .doOnNext(route -> log.debug("路由匹配成功: path={}, routeId={}", requestPath, route.getRouteId()));
-    }
-
-    /**
-     * 从 predicates JSON 中提取 Path 配置
-     *
-     * @param predicates predicates JSON 字符串
-     * @return 路径模式
-     */
-    private String extractPathPattern(String predicates) {
-        if (predicates == null || predicates.isBlank()) {
-            return null;
-        }
-
-        // 简单解析，查找 Path 断言的 pattern
-        // 格式: [{"name": "Path", "args": {"pattern": "/api/user/**"}}]
-        try {
-            if (predicates.contains("\"name\"") && predicates.contains("Path")) {
-                int patternIndex = predicates.indexOf("\"pattern\"");
-                if (patternIndex > 0) {
-                    int start = predicates.indexOf("\"", patternIndex + 10) + 1;
-                    int end = predicates.indexOf("\"", start);
-                    if (start > 0 && end > start) {
-                        return predicates.substring(start, end);
+                    if (scoreCompare != 0) {
+                        return scoreCompare;
                     }
-                }
-            }
-        } catch (Exception e) {
-            log.warn("解析 predicates 失败: {}", e.getMessage());
-        }
-
-        return null;
+                    return Integer.compare(h1.getOrder(), h2.getOrder());
+                })
+                .map(RoutePredicateHolder::getRoute)
+                .next()
+                .doOnNext(route -> log.debug("路由匹配成功: path={}, method={}, routeId={}",
+                        normalizedPath, normalizedMethod, route.getRouteId()));
     }
 
     /**
@@ -114,6 +88,96 @@ public class RoutePermissionService {
             return 40;
         }
         return 20;
+    }
+
+    private Mono<List<RoutePredicateHolder>> loadRouteCache() {
+        long now = System.currentTimeMillis();
+        if (now - lastRouteCacheRefresh.get() < ROUTE_CACHE_TTL.toMillis()) {
+            return Mono.just(routeCache.get());
+        }
+
+        return routeRepository.findAllEnabled()
+                .map(this::buildPredicateHolder)
+                .collectList()
+                .doOnNext(list -> {
+                    routeCache.set(list);
+                    lastRouteCacheRefresh.set(now);
+                    log.debug("刷新路由权限缓存, size={}", list.size());
+                });
+    }
+
+    private RoutePredicateHolder buildPredicateHolder(SysGatewayRoute route) {
+        List<String> paths = new ArrayList<>();
+        Set<String> methods = new HashSet<>();
+
+        if (route.getPredicates() != null && !route.getPredicates().isBlank()) {
+            try {
+                List<Map<String, Object>> predicateList = objectMapper.readValue(
+                        route.getPredicates(), new TypeReference<List<Map<String, Object>>>() {});
+                for (Map<String, Object> predicate : predicateList) {
+                    String name = String.valueOf(predicate.get("name"));
+                    Object args = predicate.get("args");
+                    Map<String, Object> argsMap = args instanceof Map ? (Map<String, Object>) args : Collections.emptyMap();
+                    if ("Path".equalsIgnoreCase(name)) {
+                        extractPredicateValues(argsMap).forEach(paths::add);
+                    } else if ("Method".equalsIgnoreCase(name)) {
+                        extractPredicateValues(argsMap).forEach(value -> methods.add(value.toUpperCase(Locale.ROOT)));
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("解析路由断言失败: routeId={}, error={}", route.getRouteId(), e.getMessage());
+            }
+        }
+
+        return new RoutePredicateHolder(route, paths, methods);
+    }
+
+    private List<String> extractPredicateValues(Map<String, Object> args) {
+        if (args == null || args.isEmpty()) {
+            return Collections.emptyList();
+        }
+        return args.values().stream()
+                .map(String::valueOf)
+                .collect(Collectors.toList());
+    }
+
+    private class RoutePredicateHolder {
+        private final SysGatewayRoute route;
+        private final List<String> pathPatterns;
+        private final Set<String> methods;
+
+        RoutePredicateHolder(SysGatewayRoute route, List<String> pathPatterns, Set<String> methods) {
+            this.route = route;
+            this.pathPatterns = pathPatterns != null ? pathPatterns : Collections.emptyList();
+            this.methods = methods != null ? methods : Collections.emptySet();
+        }
+
+        boolean matches(String requestPath, String httpMethod, AntPathMatcher pathMatcher) {
+            boolean pathMatched = pathPatterns.isEmpty()
+                    || pathPatterns.stream().anyMatch(pattern -> pathMatcher.match(pattern, requestPath));
+            boolean methodMatched = methods.isEmpty()
+                    || (httpMethod != null && methods.contains(httpMethod));
+            return pathMatched && methodMatched;
+        }
+
+        int bestMatchScore(String requestPath) {
+            if (pathPatterns.isEmpty()) {
+                return 0;
+            }
+            return pathPatterns.stream()
+                    .mapToInt(pattern -> calculateMatchScore(pattern, requestPath))
+                    .max()
+                    .orElse(0);
+        }
+
+        int getOrder() {
+            Integer order = route.getOrderNum();
+            return order != null ? order : Integer.MAX_VALUE;
+        }
+
+        SysGatewayRoute getRoute() {
+            return route;
+        }
     }
 
     /**
@@ -204,8 +268,8 @@ public class RoutePermissionService {
      * @param requestPath    请求路径
      * @return 验证结果
      */
-    public Mono<PermissionCheckResult> checkPermission(Authentication authentication, String requestPath) {
-        return matchRoute(requestPath)
+    public Mono<PermissionCheckResult> checkPermission(Authentication authentication, String requestPath, String method) {
+        return matchRoute(requestPath, method)
                 .flatMap(route -> {
                     // 检查路由是否禁用
                     if (!route.isEnabled()) {

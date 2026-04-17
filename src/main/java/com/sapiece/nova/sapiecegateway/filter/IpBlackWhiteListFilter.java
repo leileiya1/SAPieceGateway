@@ -1,18 +1,17 @@
 package com.sapiece.nova.sapiecegateway.filter;
 
+import com.sapiece.nova.sapiecegateway.common.FilterOrders;
+import com.sapiece.nova.sapiecegateway.util.ResponseUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.Ordered;
-import org.springframework.web.server.WebFilterChain;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
 import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ServerWebExchange;
 import org.springframework.web.server.WebFilter;
+import org.springframework.web.server.WebFilterChain;
 import reactor.core.publisher.Mono;
 
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -61,7 +60,7 @@ public class IpBlackWhiteListFilter implements WebFilter, Ordered {
      */
     @Override
     public int getOrder() {
-        return Ordered.HIGHEST_PRECEDENCE;
+        return FilterOrders.IP_BLACK_WHITE_LIST;
     }
 
     /**
@@ -234,28 +233,9 @@ public class IpBlackWhiteListFilter implements WebFilter, Ordered {
         return remoteAddress;
     }
 
-    /**
-     * 处理IP被封禁的响应
-     * 返回403状态码
-     *
-     * @param exchange 服务器Web交换对象
-     * @param clientIp 客户端IP
-     * @param message  错误消息
-     * @return Mono<Void>
-     */
     private Mono<Void> handleIpBlocked(ServerWebExchange exchange, String clientIp, String message) {
-        exchange.getResponse().setStatusCode(HttpStatus.FORBIDDEN);
-        exchange.getResponse().getHeaders().setContentType(MediaType.APPLICATION_JSON);
-
-        String responseBody = String.format(
-                "{\"code\": 403, \"message\": \"%s\", \"clientIp\": \"%s\"}",
-                message, clientIp
-        );
-
-        byte[] bytes = responseBody.getBytes(StandardCharsets.UTF_8);
-        return exchange.getResponse().writeWith(
-                Mono.just(exchange.getResponse().bufferFactory().wrap(bytes))
-        );
+        log.debug("IP封禁响应, clientIp: {}", clientIp);
+        return ResponseUtil.forbidden(exchange, message);
     }
 
     /**

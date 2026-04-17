@@ -15,7 +15,7 @@ spring:
   # Redis 配置
   data:
     redis:
-      host: localhost
+      host: 10.70.239.17
       port: 6379
       password:
       database: 0

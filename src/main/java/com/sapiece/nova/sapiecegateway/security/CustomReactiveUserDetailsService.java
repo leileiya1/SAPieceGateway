@@ -134,12 +134,20 @@ public class CustomReactiveUserDetailsService implements ReactiveUserDetailsServ
                         return Mono.zip(
                                 userPermissionCacheService.getUserRoles(userId),
                                 userPermissionCacheService.getUserPermissions(userId)
-                        ).map(tuple -> new PermissionTuple(tuple.getT1(), tuple.getT2()));
+                        ).map(tuple -> new PermissionTuple(tuple.getT1(), tuple.getT2()))
+                                .onErrorResume(e -> {
+                                    log.warn("Redis缓存读取失败，降级从数据库查询权限, userId: {}", userId);
+                                    return loadPermissionsFromDatabase(userId);
+                                });
                     } else {
                         // 缓存不存在，从数据库查询
                         log.debug("缓存不存在，从数据库查询权限, userId: {}", userId);
                         return loadPermissionsFromDatabase(userId);
                     }
+                })
+                .onErrorResume(e -> {
+                    log.warn("Redis连接失败，降级从数据库查询权限, userId: {}", userId);
+                    return loadPermissionsFromDatabase(userId);
                 });
     }
 
@@ -163,9 +171,13 @@ public class CustomReactiveUserDetailsService implements ReactiveUserDetailsServ
                     List<String> roles = tuple.getT1();
                     List<String> permissions = tuple.getT2();
 
-                    // 写入缓存
+                    // 写入缓存（Redis不可用时跳过）
                     return userPermissionCacheService.cacheUserPermissions(userId, roles, permissions)
-                            .thenReturn(new PermissionTuple(roles, permissions));
+                            .thenReturn(new PermissionTuple(roles, permissions))
+                            .onErrorResume(e -> {
+                                log.warn("Redis缓存写入失败，跳过缓存, userId: {}", userId);
+                                return Mono.just(new PermissionTuple(roles, permissions));
+                            });
                 });
     }
 

@@ -1,9 +1,12 @@
 package com.sapiece.nova.sapiecegateway.security;
 
+import com.sapiece.nova.sapiecegateway.entity.SysGatewayRoute;
 import com.sapiece.nova.sapiecegateway.route.RoutePermissionService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.security.authorization.AuthorizationDecision;
+import org.springframework.security.authorization.AuthorizationResult;
 import org.springframework.security.authorization.ReactiveAuthorizationManager;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.web.server.authorization.AuthorizationContext;
@@ -33,12 +36,13 @@ public class RouteReactiveAuthorizationManager implements ReactiveAuthorizationM
     private final RoutePermissionService routePermissionService;
 
     @Override
-    public Mono<AuthorizationDecision> check(Mono<Authentication> authentication, AuthorizationContext context) {
-        String path = context.getExchange().getRequest().getPath().value();
-        String method = context.getExchange().getRequest().getMethod().name();
+    public Mono<AuthorizationResult> authorize(Mono<Authentication> authentication, AuthorizationContext context) {
+        ServerHttpRequest request = context.getExchange().getRequest();
+        String path = request.getPath().value();
+        String method = request.getMethod() != null ? request.getMethod().name() : "UNKNOWN";
         log.debug("路由权限验证: path={}, method={}", path, method);
         // 先匹配路由，看是否需要认证
-        return routePermissionService.matchRoute(path)
+        return routePermissionService.matchRoute(path, method)
                 .flatMap(route -> {
                     // 匹配到路由配置
                     if (!route.isEnabled()) {
@@ -84,9 +88,9 @@ public class RouteReactiveAuthorizationManager implements ReactiveAuthorizationM
     /**
      * 检查用户是否有权限访问该路由
      */
-    private Mono<AuthorizationDecision> checkUserPermission(
+    private Mono<AuthorizationResult> checkUserPermission(
             Authentication authentication,
-            com.sapiece.nova.sapiecegateway.entity.SysGatewayRoute route,
+            SysGatewayRoute route,
             String path) {
 
         return routePermissionService.hasPermission(authentication, route)

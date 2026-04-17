@@ -1,5 +1,6 @@
 package com.sapiece.nova.sapiecegateway.filter;
 
+import com.sapiece.nova.sapiecegateway.common.FilterOrders;
 import com.sapiece.nova.sapiecegateway.util.JwtUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -75,8 +76,7 @@ public class JwtTokenRefreshFilter implements WebFilter, Ordered {
      */
     @Override
     public int getOrder() {
-        // 在 SecurityWebFilterChain 之后执行
-        return Ordered.LOWEST_PRECEDENCE - 1;
+        return FilterOrders.JWT_TOKEN_REFRESH;
     }
 
     @Override

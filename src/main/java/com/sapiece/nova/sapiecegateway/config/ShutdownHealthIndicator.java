@@ -1,14 +1,14 @@
 package com.sapiece.nova.sapiecegateway.config;
 
 import lombok.RequiredArgsConstructor;
-import org.springframework.boot.actuate.health.Health;
-import org.springframework.boot.actuate.health.ReactiveHealthIndicator;
+import org.springframework.boot.health.contributor.Health;
+import org.springframework.boot.health.contributor.ReactiveHealthIndicator;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 
 /**
  * 停机状态健康检查
- * 当应用开始停机时，此健康检查会返回 DOWN 状态
+ * 当应用开始停机，此健康检查会返回 DOWN 状态
  * 用于告知负载均衡器停止路由流量到此实例
  *
  * @author SAPiece

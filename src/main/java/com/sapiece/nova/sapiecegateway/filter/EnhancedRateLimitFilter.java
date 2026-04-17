@@ -1,6 +1,7 @@
 package com.sapiece.nova.sapiecegateway.filter;
 
 import com.sapiece.nova.sapiecegateway.common.ErrorCode;
+import com.sapiece.nova.sapiecegateway.common.FilterOrders;
 import com.sapiece.nova.sapiecegateway.ratelimit.RateLimitStrategy;
 import com.sapiece.nova.sapiecegateway.service.GatewayMetricsService;
 import com.sapiece.nova.sapiecegateway.util.ResponseUtil;
@@ -72,7 +73,7 @@ public class EnhancedRateLimitFilter implements WebFilter, Ordered {
 
     @Override
     public int getOrder() {
-        return Ordered.HIGHEST_PRECEDENCE + 5;  // 在认证之后执行
+        return FilterOrders.ENHANCED_RATE_LIMIT;
     }
 
     @Override

@@ -80,7 +80,7 @@ SAPiece Gateway 是一款基于 **Spring Cloud Gateway** 和 **WebFlux** 构建�
 
 - [x] **安全防护**
   - IP黑白名单过滤
-  - 参数签名验证（防篡改、防重放）
+  - 参数签名验证（防篡改、防重放，支持POST/PUT/PATCH请求体）
   - XSS/SQL注入防护
   - HTTPS强制跳转
 
@@ -606,6 +606,12 @@ signature:
   timestamp-validity: 300                     # 时间戳有效期（秒）
 ```
 
+**能力说明**
+
+- POST/PUT/PATCH 请求体自动缓存一次，根据 `Content-Type` 智能解析 JSON、表单参数后参与签名，不再局限于查询串；
+- 过滤器位于全局链路最前，签名失败立即返回结构化 JSON，避免下游重复处理；
+- 默认携带 `timestamp`、`nonce` 参与签名，可结合 Redis 做 Nonce 去重，增强防重放能力。
+
 ### 响应缓存配置
 
 ```yaml
@@ -779,6 +785,17 @@ Authorization: Bearer {token}
 ### 详细文档
 
 完整的动态路由使用指南请参考：[DYNAMIC_ROUTE_README.md](DYNAMIC_ROUTE_README.md)
+
+### 路由权限匹配优化
+
+- 网关会将 `sys_gateway_route` 中启用的路由转换成可执行断言（Path + Method 等），并在内存中缓存，默认30秒自动刷新；
+- 支持在一个路由中配置多个 `Path`、`Method` 断言；缓存刷新后立即生效，避免频繁访问数据库；
+- 未显式配置 `Method` 时默认对所有方法生效，可通过 `Method` 断言限制特定 HTTP 动作。
+
+### WebSocket / gRPC 转发
+
+- **WebSocket**：`sys_gateway_route.uri` 支持 `ws://` 或 `lb:ws://`，保持 `Upgrade`、`Sec-WebSocket-Protocol` 头透传即可完成双向通信，其他过滤器（鉴权、限流、灰度）同样生效。
+- **gRPC**：开启 `server.http2.enabled=true` 后，可通过 `Method=POST` + `Header=Content-Type, application/grpc` 断言来识别 gRPC 流量，`uri` 可使用 `h2c://` 或 `lb://`。如需消息级治理，可在后端挂载 Envoy/Nginx gRPC 代理配合本网关。
 
 ---
 
@@ -1290,6 +1307,12 @@ scrape_configs:
 ```
 
 3. 在Grafana中导入Spring Boot仪表板
+
+#### SkyWalking 链路追踪
+
+- 通过 `JAVA_TOOL_OPTIONS="-javaagent:/path/to/skywalking-agent.jar"` 注入 SkyWalking Agent 后，链路数据会自动上报；
+- 网关内部的 `LogContext` 默认尝试读取 `TraceContext.traceId()`，日志里的 `traceId` 与 SkyWalking 控制台保持一致；
+- 如果需要把 `traceId` 返回给调用方，可在全局过滤器中读取 `LogContext.getTraceId()` 并写到响应头，方便排查问题。
 
 ### 告警配置
 

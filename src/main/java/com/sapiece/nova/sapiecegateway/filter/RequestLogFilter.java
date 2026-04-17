@@ -1,6 +1,7 @@
 package com.sapiece.nova.sapiecegateway.filter;
 
 import cn.hutool.core.util.IdUtil;
+import com.sapiece.nova.sapiecegateway.common.FilterOrders;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.Ordered;
 import org.springframework.http.HttpHeaders;
@@ -44,7 +45,7 @@ public class RequestLogFilter implements WebFilter, Ordered {
      */
     @Override
     public int getOrder() {
-        return Ordered.HIGHEST_PRECEDENCE + 1;
+        return FilterOrders.REQUEST_LOG;
     }
 
     /**

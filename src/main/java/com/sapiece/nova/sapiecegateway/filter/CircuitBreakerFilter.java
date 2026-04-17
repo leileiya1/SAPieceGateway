@@ -3,6 +3,7 @@ package com.sapiece.nova.sapiecegateway.filter;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sapiece.nova.sapiecegateway.common.ErrorCode;
+import com.sapiece.nova.sapiecegateway.common.FilterOrders;
 import com.sapiece.nova.sapiecegateway.common.Result;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -38,7 +39,7 @@ public class CircuitBreakerFilter implements GlobalFilter, Ordered {
      */
     @Override
     public int getOrder() {
-        return Ordered.LOWEST_PRECEDENCE - 1;
+        return FilterOrders.CIRCUIT_BREAKER;
     }
 
     /**

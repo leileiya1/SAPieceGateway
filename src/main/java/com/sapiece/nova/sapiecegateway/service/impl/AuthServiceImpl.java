@@ -122,23 +122,21 @@ public class AuthServiceImpl implements AuthService {
         Duration duration = Duration.ofMillis(remainingTime);
         Long userId = jwtUtil.getUserIdFromToken(actualToken);
 
-        // 同时清除用户的权限缓存
+        // 同时清除用户的权限缓存（Redis不可用时降级处理，仍视为登出成功）
         return tokenBlacklistService.addToBlacklist(actualToken, duration)
                 .flatMap(success -> {
                     if (success) {
-                        // 清除权限缓存
                         return userPermissionCacheService.removeUserPermissions(userId)
-                                .thenReturn(true);
+                                .thenReturn(true)
+                                .onErrorResume(e -> {
+                                    log.warn("清除权限缓存失败，忽略, userId: {}", userId);
+                                    return Mono.just(true);
+                                });
                     }
-                    return Mono.just(false);
+                    log.warn("Token加入黑名单失败（Redis不可用），Token将在自然过期后失效, userId: {}", userId);
+                    return Mono.just(true);
                 })
-                .doOnSuccess(success -> {
-                    if (success) {
-                        log.info("用户登出成功, userId: {}", userId);
-                    } else {
-                        log.error("Token加入黑名单失败");
-                    }
-                });
+                .doOnSuccess(success -> log.info("用户登出成功, userId: {}", userId));
     }
 
     @Override

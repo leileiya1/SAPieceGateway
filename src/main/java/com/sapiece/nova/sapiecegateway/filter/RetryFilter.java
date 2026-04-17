@@ -1,5 +1,6 @@
 package com.sapiece.nova.sapiecegateway.filter;
 
+import com.sapiece.nova.sapiecegateway.common.FilterOrders;
 import io.github.resilience4j.reactor.retry.RetryOperator;
 import io.github.resilience4j.retry.Retry;
 import lombok.RequiredArgsConstructor;
@@ -7,7 +8,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.Ordered;
 import org.springframework.http.HttpMethod;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ResponseStatusException;
@@ -82,7 +82,7 @@ public class RetryFilter implements WebFilter, Ordered {
 
     @Override
     public int getOrder() {
-        return Ordered.HIGHEST_PRECEDENCE + 3;
+        return FilterOrders.RETRY;
     }
 
     @Override
@@ -204,10 +204,8 @@ public class RetryFilter implements WebFilter, Ordered {
         }
 
         // ResponseStatusException - 只有 5xx 错误可重试
-        if (error instanceof ResponseStatusException) {
-            ResponseStatusException rse = (ResponseStatusException) error;
-            HttpStatus status = (HttpStatus) rse.getStatusCode();
-            return status.is5xxServerError();
+        if (error instanceof ResponseStatusException rse) {
+            return rse.getStatusCode().is5xxServerError();
         }
 
         // 其他异常 - 不重试

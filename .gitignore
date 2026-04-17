@@ -12,7 +12,6 @@ target/
 .settings
 .springBeans
 .sts4-cache
-
 ### IntelliJ IDEA ###
 .idea
 *.iws
@@ -25,7 +24,7 @@ postman/
 jmeter/
 logs/
 /src/test/
-
+/src/main/resources
 ### NetBeans ###
 /nbproject/private/
 /nbbuild/

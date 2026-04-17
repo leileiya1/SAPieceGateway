@@ -1,5 +1,6 @@
 package com.sapiece.nova.sapiecegateway.filter;
 
+import com.sapiece.nova.sapiecegateway.common.FilterOrders;
 import com.sapiece.nova.sapiecegateway.entity.SysGrayRule;
 import com.sapiece.nova.sapiecegateway.service.GrayRuleService;
 import com.sapiece.nova.sapiecegateway.util.JwtUtil;
@@ -65,7 +66,7 @@ public class GrayReleaseFilter implements GlobalFilter, Ordered {
      */
     @Override
     public int getOrder() {
-        return Ordered.LOWEST_PRECEDENCE - 10;
+        return FilterOrders.GRAY_RELEASE;
     }
 
     /**

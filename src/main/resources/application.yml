@@ -3,11 +3,23 @@ spring:
   application:
     name: sapiece-gateway  # 应用名称
 
+  # 排除与 Spring MVC/JPA 相关的 Spring Cloud 自动配置（本项目仅使用 WebFlux + R2DBC）
+  # spring-cloud-context 4.3.0 中这些配置引用了 Boot 4 WebFlux 项目里不存在的 MVC/JPA 类
+  autoconfigure:
+    exclude:
+      - org.springframework.cloud.autoconfigure.LifecycleMvcEndpointAutoConfiguration
+      - org.springframework.cloud.autoconfigure.RefreshAutoConfiguration
+      - org.springframework.cloud.autoconfigure.RefreshEndpointAutoConfiguration
+      - org.springframework.cloud.autoconfigure.WritableEnvironmentEndpointAutoConfiguration
+      - org.springframework.cloud.autoconfigure.ConfigurationPropertiesRebinderAutoConfiguration
+
   # 优雅停机配置
   lifecycle:
     timeout-per-shutdown-phase: 30s  # 每个停机阶段的超时时间
 
   # R2DBC 响应式数据库配置
+  # 生产环境：请通过环境变量注入凭据，例如：
+  #   password: ${DB_PASSWORD}
   r2dbc:
     url: r2dbc:mysql://localhost:3306/product_test?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai
     username: root
@@ -20,7 +32,7 @@ spring:
   # Redis 响应式配置（用于限流和缓存）
   data:
     redis:
-      host: localhost
+      host: 10.70.239.17
       port: 6379
       password:
       database: 0
@@ -52,6 +64,9 @@ spring:
           # ============================================================
 
           # 全局跨域配置
+          # 注意：生产环境请将 allowed-origin-patterns 改为具体域名（如 https://yourdomain.com）
+          # 使用 allowedOriginPatterns("*") + allow-credentials: true 是 Spring 特有的安全机制，
+          # 会在响应时动态替换为请求的实际 Origin，但仍属于高风险配置，请谨慎用于生产。
           globalcors:
             cors-configurations:
               '[/**]':
@@ -66,8 +81,10 @@ spring:
             - AddRequestHeader=X-Gateway-Name, SAPiece-Gateway
 
 # JWT 配置（双Token模式）
+# 生产环境：请通过环境变量注入密钥，例如：
+#   export JWT_SECRET=<your-256bit-secret>
+#   然后配置：secret: ${JWT_SECRET}
 jwt:
-  # JWT密钥（生产环境请使用更复杂的密钥并通过环境变量注入）
   secret: SAPiece-Gateway-Secret-Key-2025-For-Authentication-And-Authorization-Security
   # 旧配置（保留兼容性）
   expiration: 604800000
@@ -181,9 +198,9 @@ management:
   endpoint:
     health:
       show-details: always
-  prometheus:
-    metrics:
-      export:
+  metrics:
+    export:
+      prometheus:
         enabled: true
 
 # 应用信息

@@ -2,6 +2,7 @@ package com.sapiece.nova.sapiecegateway.util;
 
 import org.slf4j.MDC;
 
+import java.lang.reflect.Method;
 import java.util.UUID;
 
 /**
@@ -29,7 +30,10 @@ public class LogContext {
      * @return 生成的 TraceId
      */
     public static String generateTraceId() {
-        String traceId = UUID.randomUUID().toString().replace("-", "");
+        String traceId = fetchSkyWalkingTraceId();
+        if (traceId == null || traceId.isBlank() || "Ignored_Trace".equalsIgnoreCase(traceId)) {
+            traceId = UUID.randomUUID().toString().replace("-", "");
+        }
         MDC.put(TRACE_ID, traceId);
         return traceId;
     }
@@ -40,7 +44,10 @@ public class LogContext {
      * @param traceId TraceId
      */
     public static void setTraceId(String traceId) {
-        if (traceId != null && !traceId.isEmpty()) {
+        if (traceId == null || traceId.isBlank()) {
+            traceId = fetchSkyWalkingTraceId();
+        }
+        if (traceId != null && !traceId.isBlank()) {
             MDC.put(TRACE_ID, traceId);
         }
     }
@@ -141,6 +148,25 @@ public class LogContext {
      */
     public static void remove(String key) {
         MDC.remove(key);
+    }
+
+    /**
+     * 尝试从 SkyWalking TraceContext 中获取 TraceId
+     */
+    private static String fetchSkyWalkingTraceId() {
+        try {
+            Class<?> traceContextClass = Class.forName("org.apache.skywalking.apm.toolkit.trace.TraceContext");
+            Method traceIdMethod = traceContextClass.getMethod("traceId");
+            Object result = traceIdMethod.invoke(null);
+            if (result instanceof String traceId && !traceId.isBlank()) {
+                return traceId;
+            }
+        } catch (ClassNotFoundException ignored) {
+            // SkyWalking toolkit 未启用
+        } catch (Exception ignored) {
+            // 反射调用失败时忽略，使用本地生成的TraceId
+        }
+        return null;
     }
 
     /**
