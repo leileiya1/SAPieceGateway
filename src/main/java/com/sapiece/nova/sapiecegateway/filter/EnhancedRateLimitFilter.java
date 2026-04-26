@@ -41,9 +41,6 @@ public class EnhancedRateLimitFilter implements WebFilter, Ordered {
     @Value("${rate-limit.strategy:route}")
     private String strategyName;
 
-    /**
-     * 限流Lua脚本（令牌桶算法）
-     */
     private static final String RATE_LIMIT_LUA_SCRIPT =
             "local key = KEYS[1]\n" +
             "local capacity = tonumber(ARGV[1])\n" +
@@ -70,6 +67,10 @@ public class EnhancedRateLimitFilter implements WebFilter, Ordered {
             "else\n" +
             "  return 0\n" +
             "end";
+
+    /** RedisScript静态化，避免每次请求重新解析脚本SHA1 */
+    private static final RedisScript<Long> RATE_LIMIT_SCRIPT =
+            RedisScript.of(RATE_LIMIT_LUA_SCRIPT, Long.class);
 
     @Override
     public int getOrder() {
@@ -156,10 +157,8 @@ public class EnhancedRateLimitFilter implements WebFilter, Ordered {
      * @return 限流结果（1-通过，0-限流）
      */
     private Mono<Long> executeLuaScript(String key, Integer capacity, Integer qps, long timestamp) {
-        RedisScript<Long> script = RedisScript.of(RATE_LIMIT_LUA_SCRIPT, Long.class);
-
         return reactiveRedisTemplate.execute(
-                script,
+                RATE_LIMIT_SCRIPT,
                 List.of(key),
                 List.of(String.valueOf(capacity), String.valueOf(qps), String.valueOf(timestamp))
         ).next();

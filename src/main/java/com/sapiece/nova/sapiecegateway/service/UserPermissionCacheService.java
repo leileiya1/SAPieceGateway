@@ -70,4 +70,15 @@ public interface UserPermissionCacheService {
      * @return 是否存在
      */
     Mono<Boolean> hasUserPermissions(Long userId);
+
+    /**
+     * 缓存用户密码版本号（epoch second of passwordLastChangedAt，null时存0）
+     * 登录和修改密码后调用，用于无DB校验Token是否在密码修改前签发
+     */
+    Mono<Boolean> cachePwdVer(Long userId, long pwdVer);
+
+    /**
+     * 获取用户密码版本号，缓存未命中时返回 Mono.just(0L)
+     */
+    Mono<Long> getPwdVer(Long userId);
 }

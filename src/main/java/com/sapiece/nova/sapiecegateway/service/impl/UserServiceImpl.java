@@ -1,6 +1,7 @@
 package com.sapiece.nova.sapiecegateway.service.impl;
 
 import com.sapiece.nova.sapiecegateway.repository.SysUserRepository;
+import com.sapiece.nova.sapiecegateway.service.UserPermissionCacheService;
 import com.sapiece.nova.sapiecegateway.service.UserService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -10,6 +11,7 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 
 /**
  * 用户服务实现类
@@ -25,6 +27,7 @@ public class UserServiceImpl implements UserService {
     private final SysUserRepository sysUserRepository;
     private final PasswordEncoder passwordEncoder;
     private final DatabaseClient databaseClient;
+    private final UserPermissionCacheService userPermissionCacheService;
 
     /**
      * 修改密码
@@ -60,6 +63,8 @@ public class UserServiceImpl implements UserService {
 
                     LocalDateTime now = LocalDateTime.now();
 
+                    long pwdVer = now.toEpochSecond(ZoneOffset.UTC);
+
                     return databaseClient.sql(sql)
                             .bind("password", encodedNewPassword)
                             .bind("passwordLastChangedAt", now)
@@ -67,14 +72,15 @@ public class UserServiceImpl implements UserService {
                             .bind("userName", username)
                             .fetch()
                             .rowsUpdated()
-                            .map(count -> {
-                                boolean success = count > 0;
-                                if (success) {
-                                    log.info("密码修改成功, username: {}, passwordLastChangedAt: {}", username, now);
-                                } else {
-                                    log.warn("密码修改失败，未找到用户, username: {}", username);
+                            .flatMap(count -> {
+                                if (count > 0) {
+                                    log.info("密码修改成功, username: {}", username);
+                                    // 同步更新Redis pwdVer，使旧Token立即失效
+                                    return userPermissionCacheService.cachePwdVer(user.getId(), pwdVer)
+                                            .thenReturn(true);
                                 }
-                                return success;
+                                log.warn("密码修改失败，未找到用户, username: {}", username);
+                                return Mono.just(false);
                             });
                 })
                 .switchIfEmpty(Mono.defer(() -> {

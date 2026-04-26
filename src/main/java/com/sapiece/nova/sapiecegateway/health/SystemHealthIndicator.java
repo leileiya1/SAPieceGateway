@@ -1,8 +1,6 @@
 package com.sapiece.nova.sapiecegateway.health;
 
-import io.github.resilience4j.circuitbreaker.CircuitBreaker;
-import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
-import lombok.RequiredArgsConstructor;
+import com.alibaba.csp.sentinel.slots.block.degrade.DegradeRuleManager;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.health.contributor.Health;
 import org.springframework.boot.health.contributor.ReactiveHealthIndicator;
@@ -24,10 +22,7 @@ import java.util.Map;
  */
 @Slf4j
 @Component
-@RequiredArgsConstructor
 public class SystemHealthIndicator implements ReactiveHealthIndicator {
-
-    private final CircuitBreakerRegistry circuitBreakerRegistry;
 
     @Override
     public Mono<Health> health() {
@@ -132,26 +127,22 @@ public class SystemHealthIndicator implements ReactiveHealthIndicator {
     }
 
     /**
-     * 获取熔断器状态
-     *
-     * @return 所有熔断器的状态信息
+     * 获取 Sentinel 熔断规则状态
      */
     private Map<String, Object> getCircuitBreakerStatus() {
-        Map<String, Object> circuitBreakersStatus = new HashMap<>();
-
-        circuitBreakerRegistry.getAllCircuitBreakers().forEach(circuitBreaker -> {
-            Map<String, Object> cbInfo = new HashMap<>();
-            cbInfo.put("state", circuitBreaker.getState().name());
-            cbInfo.put("failureRate", String.format("%.2f%%", circuitBreaker.getMetrics().getFailureRate()));
-            cbInfo.put("slowCallRate", String.format("%.2f%%", circuitBreaker.getMetrics().getSlowCallRate()));
-            cbInfo.put("numberOfFailedCalls", circuitBreaker.getMetrics().getNumberOfFailedCalls());
-            cbInfo.put("numberOfSlowCalls", circuitBreaker.getMetrics().getNumberOfSlowCalls());
-            cbInfo.put("numberOfSuccessfulCalls", circuitBreaker.getMetrics().getNumberOfSuccessfulCalls());
-
-            circuitBreakersStatus.put(circuitBreaker.getName(), cbInfo);
-        });
-
-        return circuitBreakersStatus;
+        Map<String, Object> status = new HashMap<>();
+        var rules = DegradeRuleManager.getRules();
+        status.put("engine", "Sentinel");
+        status.put("ruleCount", rules != null ? rules.size() : 0);
+        status.put("rules", rules != null
+                ? rules.stream().map(r -> Map.of(
+                        "resource", r.getResource(),
+                        "grade", r.getGrade(),
+                        "count", r.getCount(),
+                        "timeWindow", r.getTimeWindow()))
+                  .toList()
+                : java.util.List.of());
+        return status;
     }
 
     /**

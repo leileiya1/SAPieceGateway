@@ -1,0 +1,42 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: sapiece-gateway-hpa
+  namespace: sapiece
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: sapiece-gateway
+  minReplicas: 2           # 最少 2 个副本（保证 HA）
+  maxReplicas: 10          # 最多扩到 10 个副本
+  metrics:
+    # CPU 利用率超过 70% 触发扩容
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    # 内存利用率超过 80% 触发扩容
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+  behavior:
+    # 扩容策略：快速扩容（流量突增时迅速响应）
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      policies:
+        - type: Pods
+          value: 2           # 每次最多加 2 个 Pod
+          periodSeconds: 60
+    # 缩容策略：保守缩容（避免流量回落时过快收缩造成抖动）
+    scaleDown:
+      stabilizationWindowSeconds: 300    # 观察 5 分钟再缩
+      policies:
+        - type: Pods
+          value: 1           # 每次最多减 1 个 Pod
+          periodSeconds: 120

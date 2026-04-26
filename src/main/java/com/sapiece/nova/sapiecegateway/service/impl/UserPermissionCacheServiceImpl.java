@@ -52,72 +52,61 @@ public class UserPermissionCacheServiceImpl implements UserPermissionCacheServic
 
     @Override
     public Mono<Boolean> cacheUserPermissions(Long userId, List<String> roles, List<String> permissions) {
-        log.debug("缓存用户权限信息, userId: {}", userId);
+        log.debug("缓存用户权限信息(Set), userId: {}", userId);
 
         String rolesKey = USER_ROLES_PREFIX + userId;
         String permissionsKey = USER_PERMISSIONS_PREFIX + userId;
         Duration ttl = Duration.ofMillis(cacheExpiration);
 
-        // 先删除旧数据，再添加新数据
+        // 使用Set：去重、语义清晰、不需要__EMPTY__占位符
         Mono<Boolean> cacheRoles = reactiveRedisTemplate.delete(rolesKey)
                 .then(Mono.defer(() -> {
                     if (roles == null || roles.isEmpty()) {
-                        // 如果角色为空，存储一个占位符
-                        return reactiveRedisTemplate.opsForList()
-                                .rightPush(rolesKey, "__EMPTY__")
-                                .then(reactiveRedisTemplate.expire(rolesKey, ttl));
+                        // 空Set：用一个不可能的占位key + 立刻expire
+                        return reactiveRedisTemplate.opsForSet()
+                                .add(rolesKey + ":empty_flag", "1")
+                                .then(reactiveRedisTemplate.opsForValue()
+                                        .set(rolesKey + ":exists", "1", ttl))
+                                .thenReturn(true);
                     }
-                    return reactiveRedisTemplate.opsForList()
-                            .rightPushAll(rolesKey, roles)
-                            .then(reactiveRedisTemplate.expire(rolesKey, ttl));
+                    return reactiveRedisTemplate.opsForSet()
+                            .add(rolesKey, roles.toArray(String[]::new))
+                            .then(reactiveRedisTemplate.expire(rolesKey, ttl))
+                            .thenReturn(true);
                 }));
 
         Mono<Boolean> cachePermissions = reactiveRedisTemplate.delete(permissionsKey)
                 .then(Mono.defer(() -> {
                     if (permissions == null || permissions.isEmpty()) {
-                        // 如果权限为空，存储一个占位符
-                        return reactiveRedisTemplate.opsForList()
-                                .rightPush(permissionsKey, "__EMPTY__")
-                                .then(reactiveRedisTemplate.expire(permissionsKey, ttl));
+                        return reactiveRedisTemplate.opsForValue()
+                                .set(permissionsKey + ":exists", "1", ttl)
+                                .thenReturn(true);
                     }
-                    return reactiveRedisTemplate.opsForList()
-                            .rightPushAll(permissionsKey, permissions)
-                            .then(reactiveRedisTemplate.expire(permissionsKey, ttl));
+                    return reactiveRedisTemplate.opsForSet()
+                            .add(permissionsKey, permissions.toArray(String[]::new))
+                            .then(reactiveRedisTemplate.expire(permissionsKey, ttl))
+                            .thenReturn(true);
                 }));
 
         return Mono.zip(cacheRoles, cachePermissions)
-                .map(tuple -> tuple.getT1() && tuple.getT2())
-                .doOnSuccess(success -> {
-                    if (success) {
-                        log.info("成功缓存用户权限信息, userId: {}, rolesCount: {}, permissionsCount: {}",
-                                userId,
-                                roles != null ? roles.size() : 0,
-                                permissions != null ? permissions.size() : 0);
-                    }
-                })
+                .thenReturn(true)
+                .doOnSuccess(ok -> log.info("成功缓存用户权限(Set), userId: {}, roles: {}, perms: {}",
+                        userId,
+                        roles != null ? roles.size() : 0,
+                        permissions != null ? permissions.size() : 0))
                 .onErrorResume(e -> {
-                    log.error("缓存用户权限信息失败, userId: {}, error: {}", userId, e.getMessage());
+                    log.error("缓存用户权限失败, userId: {}, error: {}", userId, e.getMessage());
                     return Mono.just(false);
                 });
     }
 
     @Override
     public Mono<List<String>> getUserRoles(Long userId) {
-        log.debug("获取用户角色缓存, userId: {}", userId);
-
         String rolesKey = USER_ROLES_PREFIX + userId;
-
-        return reactiveRedisTemplate.opsForList()
-                .range(rolesKey, 0, -1)
+        return reactiveRedisTemplate.opsForSet()
+                .members(rolesKey)
                 .collectList()
-                .map(roles -> {
-                    // 过滤掉占位符
-                    if (roles.size() == 1 && "__EMPTY__".equals(roles.get(0))) {
-                        return Collections.<String>emptyList();
-                    }
-                    return roles;
-                })
-                .doOnSuccess(roles -> log.debug("获取用户角色缓存成功, userId: {}, roles: {}", userId, roles))
+                .doOnSuccess(r -> log.debug("获取用户角色(Set), userId: {}, count: {}", userId, r.size()))
                 .onErrorResume(e -> {
                     log.error("获取用户角色缓存失败, userId: {}, error: {}", userId, e.getMessage());
                     return Mono.just(Collections.emptyList());
@@ -126,22 +115,11 @@ public class UserPermissionCacheServiceImpl implements UserPermissionCacheServic
 
     @Override
     public Mono<List<String>> getUserPermissions(Long userId) {
-        log.debug("获取用户权限缓存, userId: {}", userId);
-
         String permissionsKey = USER_PERMISSIONS_PREFIX + userId;
-
-        return reactiveRedisTemplate.opsForList()
-                .range(permissionsKey, 0, -1)
+        return reactiveRedisTemplate.opsForSet()
+                .members(permissionsKey)
                 .collectList()
-                .map(permissions -> {
-                    // 过滤掉占位符
-                    if (permissions.size() == 1 && "__EMPTY__".equals(permissions.get(0))) {
-                        return Collections.<String>emptyList();
-                    }
-                    return permissions;
-                })
-                .doOnSuccess(permissions -> log.debug("获取用户权限缓存成功, userId: {}, permissionsCount: {}",
-                        userId, permissions.size()))
+                .doOnSuccess(p -> log.debug("获取用户权限(Set), userId: {}, count: {}", userId, p.size()))
                 .onErrorResume(e -> {
                     log.error("获取用户权限缓存失败, userId: {}, error: {}", userId, e.getMessage());
                     return Mono.just(Collections.emptyList());
@@ -184,8 +162,35 @@ public class UserPermissionCacheServiceImpl implements UserPermissionCacheServic
     @Override
     public Mono<Boolean> hasUserPermissions(Long userId) {
         String rolesKey = USER_ROLES_PREFIX + userId;
-
+        // Set有数据时key存在；空Set情况用 rolesKey+":exists" 标记
         return reactiveRedisTemplate.hasKey(rolesKey)
-                .doOnSuccess(exists -> log.debug("检查用户权限缓存是否存在, userId: {}, exists: {}", userId, exists));
+                .flatMap(exists -> exists ? Mono.just(true)
+                        : reactiveRedisTemplate.hasKey(rolesKey + ":exists"))
+                .doOnSuccess(exists -> log.debug("检查用户权限缓存(Set)是否存在, userId: {}, exists: {}", userId, exists));
+    }
+
+    private static final String USER_PWD_VER_PREFIX = "user:pwdver:";
+
+    @Override
+    public Mono<Boolean> cachePwdVer(Long userId, long pwdVer) {
+        String key = USER_PWD_VER_PREFIX + userId;
+        Duration ttl = Duration.ofMillis(cacheExpiration);
+        return reactiveRedisTemplate.opsForValue()
+                .set(key, String.valueOf(pwdVer), ttl)
+                .doOnSuccess(ok -> log.debug("缓存pwdVer, userId: {}, pwdVer: {}", userId, pwdVer))
+                .onErrorResume(e -> {
+                    log.warn("缓存pwdVer失败, userId: {}, error: {}", userId, e.getMessage());
+                    return Mono.just(false);
+                });
+    }
+
+    @Override
+    public Mono<Long> getPwdVer(Long userId) {
+        String key = USER_PWD_VER_PREFIX + userId;
+        return reactiveRedisTemplate.opsForValue()
+                .get(key)
+                .map(Long::parseLong)
+                .defaultIfEmpty(0L)
+                .onErrorReturn(0L);
     }
 }

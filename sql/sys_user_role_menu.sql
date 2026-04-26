@@ -183,10 +183,10 @@ VALUES
     (52, 2, '审计日志',   'C', 3, 'gateway:audit:list',  1, 'system', NOW(), NOW()),
     -- 网关管理按钮权限
     (60, 50, '路由新增',  'F', 1, 'gateway:route:add',   1, 'system', NOW(), NOW()),
-    (61, 50, '路由修改',  'F', 2, 'gateway:route:edit',  1, 'system', NOW(), NOW()),
-    (62, 50, '路由删除',  'F', 3, 'gateway:route:delete',1, 'system', NOW(), NOW()),
-    (63, 50, '路由刷新',  'F', 4, 'gateway:route:refresh',1,'system', NOW(), NOW()),
-    (64, 50, '路由查询',  'F', 5, 'system:role:list',    1, 'system', NOW(), NOW()),
+    (61, 50, '路由修改',  'F', 2, 'gateway:route:update', 1, 'system', NOW(), NOW()),
+    (62, 50, '路由删除',  'F', 3, 'gateway:route:delete', 1, 'system', NOW(), NOW()),
+    (63, 50, '路由刷新',  'F', 4, 'gateway:route:refresh',1, 'system', NOW(), NOW()),
+    (64, 50, '路由查询',  'F', 5, 'gateway:route:query',  1, 'system', NOW(), NOW()),
     -- 管理后台权限
     (70, 1, '管理操作',   'F', 99,'system:admin:manage', 1, 'system', NOW(), NOW()),
     (71, 1, '超级管理',   'F', 100,'system:super:admin', 1, 'system', NOW(), NOW()),

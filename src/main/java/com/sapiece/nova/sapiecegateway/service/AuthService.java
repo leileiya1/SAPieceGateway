@@ -16,20 +16,21 @@ public interface AuthService {
     /**
      * 用户登录
      *
-     * @param userName 用户名
-     * @param password 密码
-     * @return 登录结果（包含Token和用户信息）
+     * @param userName  用户名
+     * @param password  密码
+     * @param clientIp  客户端真实IP
+     * @param userAgent User-Agent
      */
-    Mono<Map<String, Object>> login(String userName, String password);
+    Mono<Map<String, Object>> login(String userName, String password, String clientIp, String userAgent);
 
     /**
-     * 用户登出
-     * 将Token加入黑名单，使其失效
+     * 用户登出，将Token加入黑名单
      *
-     * @param token JWT Token
-     * @return 是否成功
+     * @param token     JWT Token (含Bearer前缀)
+     * @param clientIp  客户端IP（用于审计日志）
+     * @param userAgent User-Agent（用于审计日志）
      */
-    Mono<Boolean> logout(String token);
+    Mono<Boolean> logout(String token, String clientIp, String userAgent);
 
     /**
      * 刷新Token（旧方法，保留兼容性）

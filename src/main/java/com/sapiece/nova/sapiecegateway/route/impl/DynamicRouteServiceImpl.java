@@ -2,11 +2,13 @@ package com.sapiece.nova.sapiecegateway.route.impl;
 
 import com.sapiece.nova.sapiecegateway.entity.SysGatewayRoute;
 import com.sapiece.nova.sapiecegateway.repository.SysGatewayRouteRepository;
+import com.sapiece.nova.sapiecegateway.route.DatabaseRouteDefinitionRepository;
 import com.sapiece.nova.sapiecegateway.route.DynamicRouteService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cloud.gateway.event.RefreshRoutesEvent;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.data.redis.core.ReactiveRedisTemplate;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
@@ -25,18 +27,30 @@ import java.time.LocalDateTime;
 @RequiredArgsConstructor
 public class DynamicRouteServiceImpl implements DynamicRouteService {
 
+    public static final String ROUTE_CHANGE_CHANNEL = "gateway:route:changed";
+
     private final SysGatewayRouteRepository routeRepository;
     private final ApplicationEventPublisher eventPublisher;
+    private final ReactiveRedisTemplate<String, String> reactiveRedisTemplate;
+    private final DatabaseRouteDefinitionRepository routeDefinitionRepository;
 
     /**
-     * 刷新所有路由
-     * 发布 RefreshRoutesEvent 事件，触发 Spring Cloud Gateway 重新加载路由
+     * 刷新所有路由：发布 RefreshRoutesEvent + Redis 广播（通知所有实例清空权限缓存）
      */
     @Override
     public Mono<Void> refreshRoutes() {
         log.info("发布路由刷新事件 RefreshRoutesEvent...");
+        // 立即失效本实例的路由定义缓存
+        routeDefinitionRepository.invalidateCache();
         eventPublisher.publishEvent(new RefreshRoutesEvent(this));
-        return Mono.empty();
+        // 广播给所有实例
+        return reactiveRedisTemplate.convertAndSend(ROUTE_CHANGE_CHANNEL, "updated")
+                .doOnSuccess(n -> log.debug("路由变更广播成功, subscribers: {}", n))
+                .onErrorResume(e -> {
+                    log.warn("路由变更广播失败（Redis不可用），仅本实例刷新: {}", e.getMessage());
+                    return Mono.just(0L);
+                })
+                .then();
     }
 
     /**
@@ -82,25 +96,31 @@ public class DynamicRouteServiceImpl implements DynamicRouteService {
         return routeRepository.findById(id)
                 .switchIfEmpty(Mono.error(new IllegalArgumentException("路由不存在: id=" + id)))
                 .flatMap(existing -> {
-                    // 保留原有的创建信息
-                    route.setId(id);
-                    route.setCreateTime(existing.getCreateTime());
-                    route.setCreator(existing.getCreator());
-                    route.setUpdateTime(LocalDateTime.now());
+                    // Merge non-null fields from request into existing entity
+                    if (route.getRouteId() != null)          existing.setRouteId(route.getRouteId());
+                    if (route.getRouteName() != null)         existing.setRouteName(route.getRouteName());
+                    if (route.getUri() != null)               existing.setUri(route.getUri());
+                    if (route.getPredicates() != null)        existing.setPredicates(route.getPredicates());
+                    if (route.getFilters() != null)           existing.setFilters(route.getFilters());
+                    if (route.getMetadata() != null)          existing.setMetadata(route.getMetadata());
+                    if (route.getOrderNum() != null)          existing.setOrderNum(route.getOrderNum());
+                    if (route.getRequireAuth() != null)       existing.setRequireAuth(route.getRequireAuth());
+                    if (route.getPermissionCode() != null)    existing.setPermissionCode(route.getPermissionCode());
+                    if (route.getPermissionLogic() != null)   existing.setPermissionLogic(route.getPermissionLogic());
+                    if (route.getRateLimitEnabled() != null)  existing.setRateLimitEnabled(route.getRateLimitEnabled());
+                    if (route.getRateLimitQps() != null)      existing.setRateLimitQps(route.getRateLimitQps());
+                    if (route.getRateLimitStrategy() != null) existing.setRateLimitStrategy(route.getRateLimitStrategy());
+                    if (route.getCacheEnabled() != null)      existing.setCacheEnabled(route.getCacheEnabled());
+                    if (route.getCacheTtl() != null)          existing.setCacheTtl(route.getCacheTtl());
+                    if (route.getRetryEnabled() != null)      existing.setRetryEnabled(route.getRetryEnabled());
+                    if (route.getRetryTimes() != null)        existing.setRetryTimes(route.getRetryTimes());
+                    if (route.getTimeoutMs() != null)         existing.setTimeoutMs(route.getTimeoutMs());
+                    if (route.getStatus() != null)            existing.setStatus(route.getStatus());
+                    if (route.getDescription() != null)       existing.setDescription(route.getDescription());
+                    existing.setUpdater(route.getUpdater());
+                    existing.setUpdateTime(LocalDateTime.now());
 
-                    // 如果路由ID变更，需要检查新ID是否已存在
-                    if (!existing.getRouteId().equals(route.getRouteId())) {
-                        return routeRepository.existsByRouteId(route.getRouteId())
-                                .flatMap(exists -> {
-                                    if (exists) {
-                                        return Mono.error(new IllegalArgumentException(
-                                                "路由ID已存在: " + route.getRouteId()));
-                                    }
-                                    return routeRepository.save(route);
-                                });
-                    }
-
-                    return routeRepository.save(route);
+                    return routeRepository.save(existing);
                 })
                 .doOnSuccess(updated -> {
                     log.info("更新路由成功: routeId={}, uri={}", updated.getRouteId(), updated.getUri());

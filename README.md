@@ -1,20 +1,20 @@
-# SAPiece Gateway - 企业级响应式API网关
+# SAPiece Gateway — 企业级响应式 API 网关
 
 <div align="center">
 
 [![Java](https://img.shields.io/badge/Java-21-orange.svg)](https://www.oracle.com/java/)
-[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.5.7-brightgreen.svg)](https://spring.io/projects/spring-boot)
-[![Spring Cloud Gateway](https://img.shields.io/badge/Spring%20Cloud%20Gateway-2025.0.0-blue.svg)](https://spring.io/projects/spring-cloud-gateway)
-[![MySQL](https://img.shields.io/badge/MySQL-8.0-blue.svg)](https://www.mysql.com/)
-[![Redis](https://img.shields.io/badge/Redis-Reactive-red.svg)](https://redis.io/)
-[![Resilience4j](https://img.shields.io/badge/Resilience4j-2.2.0-yellow.svg)](https://resilience4j.readme.io/)
+[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-4.0.5-brightgreen.svg)](https://spring.io/projects/spring-boot)
+[![Spring Cloud](https://img.shields.io/badge/Spring%20Cloud-2025.1.0-blue.svg)](https://spring.io/projects/spring-cloud)
+[![Spring Cloud Alibaba](https://img.shields.io/badge/Spring%20Cloud%20Alibaba-2025.1.0.0-orange.svg)](https://github.com/alibaba/spring-cloud-alibaba)
+[![Sentinel](https://img.shields.io/badge/Sentinel-1.8.9-red.svg)](https://github.com/alibaba/Sentinel)
+[![OpenTelemetry](https://img.shields.io/badge/OpenTelemetry-Native-purple.svg)](https://opentelemetry.io/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-**基于 Spring Boot 3.x 和 Spring Cloud Gateway 构建的企业级响应式API网关**
+**基于 Spring Boot 4.x + Spring Cloud Gateway 构建的生产级响应式 API 网关**
 
-*集成JWT认证、动态路由、权限控制、限流熔断、日志监控等完整的网关解决方案*
+*集成 JWT 双 Token 认证、Nacos 服务发现与配置、Sentinel 熔断降级、OpenTelemetry 链路追踪、HMAC 下游信任签名、Security Headers、HA 部署等完整的微服务网关解决方案*
 
-[快速开始](#-快速开始) • [核心功能](#-核心功能) • [API文档](#-api接口文档) • [部署指南](#-部署指南) • [常见问题](#-常见问题)
+[快速开始](#-快速开始) · [核心功能](#-核心功能) · [API 文档](#-api-接口文档) · [部署指南](#-部署指南) · [常见问题](#-常见问题)
 
 </div>
 
@@ -30,35 +30,38 @@
 - [详细配置](#-详细配置)
 - [动态路由](#-动态路由)
 - [权限控制](#-权限控制)
-- [API接口文档](#-api接口文档)
+- [服务发现与配置中心](#-服务发现与配置中心)
+- [熔断降级（Sentinel）](#-熔断降级sentinel)
+- [链路追踪（OpenTelemetry）](#-链路追踪opentelemetry)
+- [下游信任（HMAC 签名）](#-下游信任hmac-签名)
+- [安全加固](#-安全加固)
+- [API 接口文档](#-api-接口文档)
 - [部署指南](#-部署指南)
 - [监控运维](#-监控运维)
-- [性能调优](#-性能调优)
-- [安全最佳实践](#-安全最佳实践)
 - [常见问题](#-常见问题)
+- [更新日志](#-更新日志)
 
 ---
 
 ## 项目简介
 
-SAPiece Gateway 是一款基于 **Spring Cloud Gateway** 和 **WebFlux** 构建的企业级响应式API网关，采用完全异步非阻塞架构，为微服务架构提供统一的流量入口和安全防护。
+SAPiece Gateway 是一款基于 **Spring Boot 4.x** 和 **Spring Cloud Gateway 2025.1** 构建的企业级响应式 API 网关，采用完全异步非阻塞架构，为微服务集群提供统一的流量入口、安全认证、服务治理和全链路可观测性。
 
 ### 🎯 设计理念
 
-- **高性能**: 基于 Reactor 响应式编程模型，支持高并发场景
-- **高可用**: 集成熔断降级、请求重试、限流保护等容错机制
-- **易扩展**: 模块化设计，支持自定义过滤器和路由策略
-- **易运维**: 完善的日志、监控、链路追踪支持
+- **高性能**：Reactor + Netty 响应式模型，单机支持数万并发
+- **高可用**：Sentinel 熔断 + Nacos 服务发现 + Nginx HA + K8s HPA
+- **零信任**：HMAC 签名保障网关 → 下游通信安全，防止绕过网关直接调用
+- **全可观测**：OpenTelemetry traceId 贯穿全链路，Prometheus + Grafana 实时看板
 
 ### 🌟 适用场景
 
-- ✅ 微服务架构统一网关入口
-- ✅ API接口的安全认证与鉴权
-- ✅ 流量控制与限流保护
-- ✅ 服务熔断与降级
-- ✅ 请求日志与监控
-- ✅ 跨域资源共享（CORS）
-- ✅ API版本管理与灰度发布
+- ✅ 微服务架构统一流量入口
+- ✅ JWT 认证 + RBAC 权限控制
+- ✅ 流量控制与 Sentinel 熔断降级
+- ✅ 灰度发布与 A/B 测试
+- ✅ 全链路分布式追踪
+- ✅ 生产级 HA / K8s 弹性部署
 
 ---
 
@@ -66,98 +69,60 @@ SAPiece Gateway 是一款基于 **Spring Cloud Gateway** 和 **WebFlux** 构建�
 
 ### 🔐 安全认证
 
-- [x] **JWT认证机制**
-  - 完整的Token生成、验证、刷新流程
-  - 支持Token黑名单（基于Redis）
-  - 自动Token续期机制
-  - 多端Token隔离（支持Web、APP等不同端）
-
-- [x] **RBAC权限控制**
-  - 用户-角色-权限三层模型
-  - 基于注解的方法级权限控制
-  - 动态权限加载与缓存
-  - 权限继承与级联
-
-- [x] **安全防护**
-  - IP黑白名单过滤
-  - 参数签名验证（防篡改、防重放，支持POST/PUT/PATCH请求体）
-  - XSS/SQL注入防护
-  - HTTPS强制跳转
+| 功能 | 说明 |
+|------|------|
+| **JWT 双 Token** | Access Token（30min）+ Refresh Token（7天），刷新时旧 Refresh Token 立刻失效 |
+| **pwdVer 机制** | 密码修改后所有旧 Token 即刻失效，无需 DB 查询（Redis pwdVer 比对） |
+| **Token 黑名单** | 登出后 Token 加入 Redis 黑名单；jti（UUID）确保同秒生成的 Token 不碰撞 |
+| **用户黑名单** | 管理员可封禁特定用户，封禁后所有 Token 失效 |
+| **RBAC 权限** | 用户 → 角色 → 权限三层模型，基于 `@PreAuthorize` 方法级控制 |
+| **权限缓存** | 角色/权限存 Redis Set，登录后热路径无 DB 查询 |
 
 ### 🚦 流量管理
 
-- [x] **接口限流**
-  - 基于Redis令牌桶算法
-  - 支持全局限流、IP限流、用户限流
-  - QPS可配置，支持突发流量
-  - 限流降级响应
+| 功能 | 说明 |
+|------|------|
+| **Lua Token Bucket 限流** | IP / 用户 / 路由三种策略，基于 Redis 原子 Lua 脚本，支持突发流量 |
+| **Sentinel 熔断降级** | 慢调用比率 + 异常比率双触发，规则持久化在 Nacos，热更新无需重启 |
+| **IP 黑白名单** | 支持精确 IP 和 CIDR 段，动态添加无需重启 |
+| **幂等性保护** | `@Idempotent` 注解，HEADER/BODY 两种模式，防重复提交 |
 
-- [x] **熔断降级**
-  - Resilience4j熔断器集成
-  - 故障率、慢调用双重熔断策略
-  - 半开状态自动恢复
-  - 自定义降级响应
+### 🛣️ 路由与服务发现
 
-- [x] **请求重试**
-  - 智能重试机制（仅重试幂等请求）
-  - 指数退避策略
-  - 可配置重试次数和间隔
-  - 异常分类重试
+| 功能 | 说明 |
+|------|------|
+| **数据库动态路由** | 路由配置存 MySQL，增删改无需重启 |
+| **TTL 缓存** | 30s 内存缓存，`Redis Pub/Sub` 多实例强制失效同步 |
+| **Nacos 服务发现** | 网关自动注册到 Nacos，下游服务用 `lb://service-name` 自动负载均衡 |
+| **灰度发布** | 支持 Header / 参数 / 权重多种灰度策略 |
 
-### 🛣️ 动态路由
+### 🔭 可观测性
 
-- [x] **数据库驱动路由**
-  - 基于sys_menu表的动态路由配置
-  - 支持热更新，无需重启
-  - 可视化路由管理界面（配合前端）
-  - 路由版本管理
+| 功能 | 说明 |
+|------|------|
+| **OpenTelemetry 追踪** | 内置 `spring-boot-starter-opentelemetry`，自动生成 traceId/spanId |
+| **traceparent 注入** | W3C TraceContext 格式注入下游请求头，下游 OTel SDK 自动接管 |
+| **审计日志** | 记录登录/登出/操作，支持时间范围查询和清理 |
+| **请求日志** | 每次请求记录路径、耗时、状态，慢请求（>3s）额外告警 |
+| **Prometheus 指标** | `/actuator/prometheus`，配合 Grafana 实时看板 |
 
-- [x] **灵活配置**
-  - 支持Path、Method、Header等多种断言
-  - 支持StripPrefix、AddHeader等过滤器
-  - 路由优先级控制
-  - 负载均衡集成（lb://）
+### 🛡️ 安全加固
 
-### 📊 可观测性
+| 功能 | 说明 |
+|------|------|
+| **HMAC 下游签名** | `X-Gateway-Signature` + `X-Gateway-Timestamp`，防止绕过网关直接调用下游 |
+| **Security Headers** | HSTS / CSP / X-Frame-Options / X-Content-Type-Options / Referrer-Policy 全套 |
+| **HTTPS / TLS** | 支持 `SSL_ENABLED=true` 启用，自签证书生成脚本已内置 |
+| **X-User-* 防伪造** | 网关剥离客户端伪造的用户信息 header，认证后注入真实值 |
 
-- [x] **请求日志**
-  - 详细的请求/响应日志
-  - 唯一请求ID追踪
-  - 耗时统计与慢请求告警
-  - 支持日志脱敏
+### 🏗️ 高可用与运维
 
-- [x] **方法日志**
-  - AOP切面统一日志记录
-  - Service/Controller/Repository全覆盖
-  - 方法参数、返回值、异常记录
-  - 性能分析支持
-
-- [x] **健康检查**
-  - Spring Boot Actuator集成
-  - 数据库连接健康检查
-  - Redis连接健康检查
-  - 系统资源监控
-
-### ⚡ 性能优化
-
-- [x] **响应缓存**
-  - Redis分布式缓存
-  - 智能缓存策略（GET请求）
-  - 缓存命中率统计
-  - 缓存预热与更新
-
-- [x] **HTTP/2支持**
-  - 多路复用
-  - 服务器推送
-  - 头部压缩
-
-### 🌐 跨域支持
-
-- [x] **完善的CORS配置**
-  - 支持前后端分离
-  - 可配置允许的域名、方法、头部
-  - 预检请求优化
-  - 凭证支持
+| 功能 | 说明 |
+|------|------|
+| **docker-compose HA** | Nginx 负载均衡 + 多 Gateway 实例 + Jaeger + Prometheus + Grafana |
+| **K8s 生产清单** | Deployment / Service / HPA / ConfigMap / Secret / Namespace 完整 |
+| **滚动更新** | `maxUnavailable=0` 零宕机发布，`terminationGracePeriodSeconds=40` 优雅停机 |
+| **Nacos 配置中心** | 部分配置外部化，`optional:nacos:` 前缀确保 Nacos 不可用时仍能启动 |
 
 ---
 
@@ -167,73 +132,64 @@ SAPiece Gateway 是一款基于 **Spring Cloud Gateway** 和 **WebFlux** 构建�
 
 | 技术 | 版本 | 说明 |
 |------|------|------|
-| Java | 21 | LTS版本，虚拟线程支持 |
-| Spring Boot | 3.5.7 | 企业级应用框架 |
-| Spring Cloud Gateway | 2025.0.0 | 响应式API网关 |
-| Spring Security | 6.x | 安全认证框架 |
-| Spring Data R2DBC | 3.x | 响应式数据库访问 |
-| MySQL | 8.0+ | 关系型数据库 |
-| Redis | 5.0+ | 缓存与限流 |
-| Resilience4j | 2.2.0 | 熔断降级库 |
-| JJWT | 0.12.6 | JWT处理库 |
-| Hutool | 5.8.41 | Java工具类库 |
-| Lombok | Latest | 简化代码 |
-| Knife4j | 4.4.0 | API文档 |
+| Java | 21 | LTS，虚拟线程支持 |
+| Spring Boot | **4.0.5** | 最新稳定版 |
+| Spring Cloud Gateway | **2025.1.0** | `gateway-server-webflux` 工件 |
+| Spring Cloud Alibaba | **2025.1.0.0** | Nacos Discovery + Config |
+| Nacos | 2.x | 服务注册发现 + 配置中心 |
+| Sentinel | **1.8.9** | 熔断降级（v6x Gateway 适配器）|
+| OpenTelemetry | Spring Boot 4 Native | `spring-boot-starter-opentelemetry` |
+| Spring Security WebFlux | 6.x | JWT 认证 + RBAC |
+| R2DBC MySQL | `io.asyncer:r2dbc-mysql:1.4.1` | 响应式数据库驱动 |
+| Redis Reactive | Lettuce | 限流 / 缓存 / Pub/Sub |
+| JJWT | 0.12.6 | JWT 生成与验证（含 jti 唯一标识）|
+| Hutool | 5.8.41 | 工具类 |
+| Knife4j | 4.4.0 | Swagger API 文档 |
 
 ### 架构图
 
 ```
-                                   ┌─────────────────┐
-                                   │   Client/前端    │
-                                   └────────┬────────┘
-                                            │
-                                            ▼
-                         ┌──────────────────────────────────┐
-                         │     SAPiece Gateway (网关)       │
-                         │  ┌────────────────────────────┐  │
-                         │  │  JWT认证过滤器             │  │
-                         │  └──────────┬─────────────────┘  │
-                         │             ▼                     │
-                         │  ┌────────────────────────────┐  │
-                         │  │  IP黑白名单过滤器          │  │
-                         │  └──────────┬─────────────────┘  │
-                         │             ▼                     │
-                         │  ┌────────────────────────────┐  │
-                         │  │  限流过滤器 (Redis)        │  │
-                         │  └──────────┬─────────────────┘  │
-                         │             ▼                     │
-                         │  ┌────────────────────────────┐  │
-                         │  │  请求日志过滤器            │  │
-                         │  └──────────┬─────────────────┘  │
-                         │             ▼                     │
-                         │  ┌────────────────────────────┐  │
-                         │  │  动态路由定位              │  │
-                         │  └──────────┬─────────────────┘  │
-                         │             ▼                     │
-                         │  ┌────────────────────────────┐  │
-                         │  │  熔断降级 (Resilience4j)   │  │
-                         │  └──────────┬─────────────────┘  │
-                         │             ▼                     │
-                         │  ┌────────────────────────────┐  │
-                         │  │  请求重试                  │  │
-                         │  └──────────┬─────────────────┘  │
-                         └─────────────┼─────────────────────┘
-                                       │
-                    ┌──────────────────┼──────────────────┐
-                    │                  │                  │
-                    ▼                  ▼                  ▼
-          ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
-          │ 用户服务     │    │ 订单服务     │    │ 商品服务     │
-          │ :8081        │    │ :8082        │    │ :8083        │
-          └─────────────┘    └─────────────┘    └─────────────┘
+                         ┌──────────────────────────┐
+                         │       客户端 / 浏览器      │
+                         └─────────────┬────────────┘
+                                       │ HTTPS
+                         ┌─────────────▼────────────┐
+                         │         Nginx LB          │  ← 80/443 端口，TLS 终止
+                         │   least_conn 负载均衡     │
+                         └──────┬──────────┬─────────┘
+                                │          │
+               ┌────────────────▼──┐  ┌────▼───────────────┐
+               │  Gateway 实例 1   │  │  Gateway 实例 2     │  ← 水平扩展
+               │  (8080)           │  │  (8080)             │
+               └────────────────┬──┘  └────┬───────────────┘
+                                │          │  Redis Pub/Sub 路由缓存同步
+              ┌─────────────────▼──────────▼──────────────┐
+              │          过滤器执行链（按 Order 排序）       │
+              │  ① IP黑白名单 (HIGHEST_PRECEDENCE)         │
+              │  ② 请求日志   (HIGHEST+1)                  │
+              │  ③ 限流过滤器 (Lua Token Bucket, HIGHEST+5)│
+              │  ④ Security Headers (响应头, HIGHEST+2)    │
+              │  ⑤ Sentinel Gateway Filter (order=-1)     │
+              │  ⑥ 认证信息透传 AuthHeaderFilter (order=-50)│
+              │  ⑦ 链路追踪 TraceHeaderFilter (order=-49) │
+              │  ⑧ 动态路由 / lb:// 负载均衡               │
+              │  ⑨ 熔断兜底 CircuitBreakerFilter           │
+              └────────────────┬──────────────────────────┘
+                               │  X-User-Id/Name/Roles + X-Gateway-Signature
+              ┌────────────────▼───────────────────────────┐
+              │           下游微服务集群                     │
+              │  user-service   order-service   ...        │
+              │  (lb://name 经 Nacos 发现)                 │
+              └───────┬──────────────┬────────────────┬────┘
+                      │              │                │
+              ┌───────▼──┐  ┌────────▼──┐  ┌─────────▼───┐
+              │  MySQL   │  │  Redis    │  │  Nacos      │
+              │  (R2DBC) │  │  (限流/缓存)│  │ (服务发现)  │
+              └──────────┘  └───────────┘  └─────────────┘
 
-                    ┌──────────────────┬──────────────────┐
-                    │                  │                  │
-                    ▼                  ▼                  ▼
-          ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
-          │  MySQL       │    │  Redis       │    │ Actuator    │
-          │  (R2DBC)     │    │  (限流/缓存) │    │ (监控)      │
-          └─────────────┘    └─────────────┘    └─────────────┘
+可观测性：
+  所有 Span → Jaeger (OTLP gRPC:4317)
+  所有 Metric → Prometheus (:9090) → Grafana (:3000)
 ```
 
 ---
@@ -242,1446 +198,1152 @@ SAPiece Gateway 是一款基于 **Spring Cloud Gateway** 和 **WebFlux** 构建�
 
 ```
 SAPiece-Gateway/
-├── sql/                                      # 数据库脚本
-│   ├── sys_user.sql                         # 用户表
-│   ├── sys_role.sql                         # 角色表
-│   ├── sys_menu.sql                         # 菜单权限表（含路由配置）
-│   ├── sys_user_role.sql                    # 用户角色关联表
-│   ├── sys_role_menu.sql                    # 角色菜单关联表
-│   └── sys_menu_route_examples.sql          # 路由配置示例数据
+├── sql/                                      # 数据库初始化脚本
+│   └── sys_user_role_menu.sql               # 用户/角色/权限/路由一体脚本
+│
+├── scripts/
+│   └── gen-keystore.sh                      # 自签 TLS 证书生成脚本
+│
+├── deploy/                                   # 部署配置
+│   ├── nginx/
+│   │   ├── nginx.conf                       # Nginx HA 反向代理配置
+│   │   └── ssl/                             # 生产 TLS 证书挂载目录
+│   ├── prometheus/
+│   │   └── prometheus.yml                   # Prometheus 抓取配置
+│   └── grafana/
+│       └── provisioning/datasources/        # Grafana 数据源自动配置
+│
+├── k8s/                                     # K8s 生产清单
+│   ├── namespace.yaml                       # Namespace: sapiece
+│   ├── configmap.yaml                       # ConfigMap + Secret
+│   ├── deployment.yaml                      # Deployment（含探针/资源限制）
+│   ├── service.yaml                         # ClusterIP + LoadBalancer
+│   └── hpa.yaml                             # HPA（CPU 70% / 内存 80% 触发）
+│
+├── docker-compose.yml                       # HA 部署：nginx+gateway×N+jaeger+prometheus+grafana
+├── Dockerfile                               # 多阶段构建，非 root 运行
 │
 ├── src/main/java/.../sapiecegateway/
-│   ├── aspect/                              # AOP切面
-│   │   ├── IdempotentAspect.java           # 幂等性切面
-│   │   └── MethodLogAspect.java            # 方法日志切面
+│   ├── aspect/
+│   │   └── IdempotentAspect.java           # 幂等性切面（Reactor context 兼容）
 │   │
-│   ├── common/                              # 公共类
-│   │   ├── Constants.java                   # 常量定义
-│   │   └── Result.java                      # 统一响应结果
+│   ├── config/
+│   │   ├── HttpsConfig.java                # HTTPS 重定向过滤器
+│   │   ├── SecurityConfig.java             # Spring Security WebFlux 配置
+│   │   ├── SentinelGatewayConfig.java      # Sentinel 熔断配置 + 自定义 JSON 响应
+│   │   ├── CorsConfig.java                 # CORS 跨域配置
+│   │   └── R2dbcConfig.java                # R2DBC 事务管理器
 │   │
-│   ├── config/                              # 配置类
-│   │   ├── CircuitBreakerConfig.java       # 熔断器配置
-│   │   ├── CorsConfig.java                  # CORS跨域配置
-│   │   ├── PasswordEncoderConfig.java       # 密码编码器配置
-│   │   ├── R2dbcConfig.java                 # R2DBC配置
-│   │   ├── RedisConfig.java                 # Redis配置
-│   │   ├── RetryConfig.java                 # 重试配置
-│   │   ├── SecurityConfig.java              # Spring Security配置
-│   │   └── SwaggerConfig.java               # Swagger文档配置
+│   ├── controller/
+│   │   ├── AuthController.java             # 认证：登录/登出/刷新/用户信息
+│   │   ├── GatewayRouteController.java     # 路由管理 CRUD
+│   │   ├── AdminController.java            # IP/Token/用户黑名单管理
+│   │   ├── GrayRuleController.java         # 灰度规则管理
+│   │   └── AuditLogController.java         # 审计日志查询
 │   │
-│   ├── controller/                          # 控制器
-│   │   ├── AdminController.java             # 管理员控制器
-│   │   ├── AuthController.java              # 认证控制器
-│   │   ├── RouteController.java             # 路由管理控制器
-│   │   └── TestController.java              # 测试控制器
+│   ├── filter/
+│   │   ├── AuthHeaderGatewayFilter.java    # 认证信息透传 + HMAC 签名注入
+│   │   ├── TraceHeaderGatewayFilter.java   # OTel traceId/traceparent 注入下游
+│   │   ├── SecurityHeadersFilter.java      # Security Headers（HSTS/CSP/...）
+│   │   ├── EnhancedRateLimitFilter.java    # Lua Token Bucket 限流
+│   │   ├── IpBlackWhiteListFilter.java     # IP 黑白名单（含可信代理 XFF）
+│   │   ├── RequestLogFilter.java           # 请求/响应日志
+│   │   └── CircuitBreakerFilter.java       # 熔断降级兜底响应
 │   │
-│   ├── entity/                              # 实体类
-│   │   ├── SysMenu.java                     # 菜单实体（含路由字段）
-│   │   ├── SysRole.java                     # 角色实体
-│   │   ├── SysRoleMenu.java                 # 角色菜单关联
-│   │   ├── SysUser.java                     # 用户实体
-│   │   └── SysUserRole.java                 # 用户角色关联
+│   ├── route/
+│   │   ├── DatabaseRouteDefinitionRepository.java  # 数据库路由 + TTL 缓存
+│   │   ├── RoutePermissionService.java             # 路由权限校验 + Redis Pub/Sub 订阅
+│   │   └── impl/DynamicRouteServiceImpl.java       # 路由 CRUD + Pub/Sub 发布
 │   │
-│   ├── exception/                           # 异常处理
-│   │   ├── BusinessException.java           # 业务异常
-│   │   └── GlobalExceptionHandler.java      # 全局异常处理器
+│   ├── security/
+│   │   ├── JwtSecurityContextRepository.java  # JWT 认证核心（热路径无 DB）
+│   │   ├── CustomUserDetails.java
+│   │   └── CustomReactiveUserDetailsService.java
 │   │
-│   ├── filter/                              # 网关过滤器
-│   │   ├── CircuitBreakerFilter.java       # 熔断器过滤器
-│   │   ├── GatewayRequestLogFilter.java    # 网关请求日志过滤器
-│   │   ├── IpBlackWhiteListFilter.java     # IP黑白名单过滤器
-│   │   ├── RateLimitFilter.java            # 限流过滤器
-│   │   ├── RequestLogFilter.java           # 请求日志过滤器
-│   │   ├── ResponseCacheFilter.java        # 响应缓存过滤器
-│   │   ├── RetryFilter.java                # 重试过滤器
-│   │   └── SignatureVerificationFilter.java # 签名验证过滤器
+│   ├── service/
+│   │   ├── AuthService.java / impl/AuthServiceImpl.java         # 登录/登出/刷新
+│   │   ├── UserPermissionCacheService.java / impl/...           # Redis 权限缓存（Set）
+│   │   ├── TokenBlacklistService.java / impl/...                # Token/用户黑名单
+│   │   └── AuditLogService.java / impl/AuditLogServiceImpl.java # 审计日志
 │   │
-│   ├── handler/                             # 处理器
-│   │   └── FallbackHandler.java            # 降级处理器
-│   │
-│   ├── health/                              # 健康检查
-│   │   ├── R2dbcHealthIndicator.java       # R2DBC健康检查
-│   │   ├── RedisHealthIndicator.java       # Redis健康检查
-│   │   └── SystemHealthIndicator.java      # 系统健康检查
-│   │
-│   ├── listener/                            # 监听器
-│   │   └── DynamicRouteLoader.java         # 动态路由加载器
-│   │
-│   ├── repository/                          # 数据访问层
-│   │   ├── SysMenuRepository.java
-│   │   ├── SysRoleMenuRepository.java
-│   │   ├── SysRoleRepository.java
-│   │   ├── SysUserRepository.java
-│   │   └── SysUserRoleRepository.java
-│   │
-│   ├── security/                            # 安全相关
-│   │   ├── CustomReactiveUserDetailsService.java   # 用户详情服务
-│   │   ├── CustomUserDetails.java                  # 自定义用户详情
-│   │   └── JwtAuthenticationFilter.java            # JWT认证过滤器
-│   │
-│   ├── service/                             # 服务层
-│   │   ├── AdminService.java                # 管理服务
-│   │   ├── AuthService.java                 # 认证服务
-│   │   ├── DynamicRouteService.java         # 动态路由服务
-│   │   ├── IdempotentService.java           # 幂等性服务
-│   │   ├── SysMenuService.java              # 菜单服务
-│   │   ├── SysRoleService.java              # 角色服务
-│   │   ├── SysUserService.java              # 用户服务
-│   │   ├── TokenBlacklistService.java       # Token黑名单服务
-│   │   └── impl/                            # 服务实现类
-│   │       ├── AdminServiceImpl.java
-│   │       ├── AuthServiceImpl.java
-│   │       ├── DynamicRouteServiceImpl.java
-│   │       ├── IdempotentServiceImpl.java
-│   │       ├── SysMenuServiceImpl.java
-│   │       ├── SysRoleServiceImpl.java
-│   │       ├── SysUserServiceImpl.java
-│   │       └── TokenBlacklistServiceImpl.java
-│   │
-│   ├── util/                                # 工具类
-│   │   ├── JwtUtil.java                     # JWT工具类
-│   │   └── ResponseUtil.java                # 响应工具类
-│   │
-│   └── SaPieceGatewayApplication.java       # 应用启动类
+│   └── util/
+│       ├── JwtUtil.java                    # JWT 工具（含 jti 唯一标识）
+│       ├── IpUtil.java                     # 可信代理 XFF 提取
+│       └── GatewaySignatureUtil.java       # HMAC-SHA256 签名工具
 │
 ├── src/main/resources/
-│   ├── application.yml                      # 主配置文件
-│   ├── application-dev.yml                  # 开发环境配置
-│   └── application-prod.yml                 # 生产环境配置
+│   ├── application.yml                     # 主配置（含 Nacos/Sentinel/OTel/HTTPS）
+│   ├── application-dev.yml                 # 开发环境配置
+│   └── ssl/gateway.p12                     # 自签证书（gen-keystore.sh 生成）
 │
-├── DYNAMIC_ROUTE_README.md                  # 动态路由使用指南
-├── README.md                                # 项目说明文档（本文件）
-└── pom.xml                                  # Maven配置文件
+└── pom.xml
 ```
 
 ---
 
 ## 🚀 快速开始
 
-### 1. 环境要求
+### 环境要求
 
-#### 必需环境
+| 软件 | 版本 | 必需 |
+|------|------|------|
+| JDK | 21+ | ✅ |
+| Maven | 3.6+ | ✅ |
+| MySQL | 8.0+ | ✅ |
+| Redis | 5.0+ | ✅ |
+| Nacos | 2.x | ✅ |
+| Docker（可选） | 20+ | 推荐 |
 
-| 软件 | 版本要求 | 说明 |
-|------|---------|------|
-| JDK | 21+ | 推荐使用OpenJDK或Oracle JDK |
-| Maven | 3.6+ | 项目构建工具 |
-| MySQL | 8.0+ | 数据库 |
-| Redis | 5.0+ | 缓存和限流 |
+### 1. 启动基础设施
 
-#### 可选环境
-
-- Docker（推荐用于快速部署MySQL和Redis）
-- Nacos/Eureka（使用负载均衡时需要）
-
-### 2. 克隆项目
+#### 使用 Docker 快速启动 MySQL + Redis + Nacos
 
 ```bash
-git clone https://github.com/your-repo/SAPiece-Gateway.git
-cd SAPiece-Gateway
+# MySQL
+docker run -d --name mysql \
+  -e MYSQL_ROOT_PASSWORD=root \
+  -e MYSQL_DATABASE=product_test \
+  -p 3306:3306 \
+  mysql:8.0
+
+# Redis
+docker run -d --name redis -p 6379:6379 redis:7-alpine
+
+# Nacos（单机模式）
+docker run -d --name nacos \
+  -e MODE=standalone \
+  -p 8848:8848 \
+  nacos/nacos-server:v2.3.0
 ```
 
-### 3. 数据库初始化
+#### 或使用已有服务
 
-#### 方式1：使用MySQL命令行
+本项目当前开发环境：
+- MySQL：`10.70.239.17:3306`，数据库 `product_test`
+- Redis：`10.70.239.17:6379`
+- Nacos：`10.70.239.17:8848`（用户名/密码：nacos/nacos）
+
+### 2. 初始化数据库
 
 ```bash
-# 1. 创建数据库
-mysql -u root -p -e "CREATE DATABASE product_test CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;"
-
-# 2. 执行SQL脚本（按顺序）
-mysql -u root -p product_test < sql/sys_user.sql
-mysql -u root -p product_test < sql/sys_role.sql
-mysql -u root -p product_test < sql/sys_menu.sql
-mysql -u root -p product_test < sql/sys_user_role.sql
-mysql -u root -p product_test < sql/sys_role_menu.sql
-
-# 3. 导入路由示例数据（可选）
-mysql -u root -p product_test < sql/sys_menu_route_examples.sql
+mysql -h 10.70.239.17 -u sapiece -p product_test < sql/sys_user_role_menu.sql
 ```
 
-#### 方式2：使用数据库客户端
+### 3. 修改配置
 
-使用 Navicat、DBeaver 等工具依次执行 `sql/` 目录下的脚本。
-
-### 4. 配置修改
-
-编辑 `src/main/resources/application-dev.yml`：
+编辑 `src/main/resources/application-dev.yml`，填入你的 MySQL、Redis、Nacos 地址：
 
 ```yaml
 spring:
-  # R2DBC 数据库配置
   r2dbc:
-    url: r2dbc:mysql://localhost:3306/product_test?useUnicode=true&characterEncoding=utf8
-    username: root
-    password: your_password    # 修改为你的MySQL密码
-
-  # Redis 配置
+    url: r2dbc:mysql://YOUR_MYSQL_HOST:3306/product_test?serverTimezone=Asia/Shanghai
+    username: YOUR_USER
+    password: YOUR_PASSWORD
   data:
     redis:
-      host: localhost
-      port: 6379
-      password:                # 如果Redis设置了密码，在这里配置
-
-# JWT 配置（生产环境务必修改secret）
-jwt:
-  secret: your-secret-key-please-change-in-production-at-least-256-bits
-  expiration: 604800000        # 7天
-  refresh: 259200000           # 3天
+      host: YOUR_REDIS_HOST
+  cloud:
+    nacos:
+      discovery:
+        server-addr: YOUR_NACOS_HOST:8848
+        username: nacos
+        password: nacos
+      config:
+        server-addr: YOUR_NACOS_HOST:8848
+        username: nacos
+        password: nacos
 ```
 
-### 5. 启动Redis
-
-#### 使用Docker启动（推荐）
+### 4. 编译并启动
 
 ```bash
-docker run -d --name redis -p 6379:6379 redis:7-alpine
-```
+# 编译
+mvn clean package -DskipTests
 
-#### 或使用本地Redis
+# 开发环境启动
+java -jar target/SAPiece-Gateway-0.0.1-SNAPSHOT.jar --spring.profiles.active=dev
 
-```bash
-redis-server
-```
-
-### 6. 编译项目
-
-```bash
-mvn clean compile
-```
-
-### 7. 启动应用
-
-#### 开发环境
-
-```bash
+# 或
 mvn spring-boot:run -Dspring-boot.run.profiles=dev
 ```
 
-或使用IDE运行 `SaPieceGatewayApplication.java`，配置 Active profiles 为 `dev`
-
-#### 生产环境
+### 5. 验证启动
 
 ```bash
-# 打包
-mvn clean package -DskipTests
-
-# 运行
-java -jar target/SAPiece-Gateway-0.0.1-SNAPSHOT.jar --spring.profiles.active=prod
-```
-
-### 8. 验证启动
-
-访问健康检查端点：
-
-```bash
+# 健康检查
 curl http://localhost:8080/actuator/health
-```
 
-预期响应：
-
-```json
-{
-  "status": "UP",
-  "components": {
-    "diskSpace": {"status": "UP"},
-    "ping": {"status": "UP"},
-    "r2dbc": {"status": "UP"},
-    "redis": {"status": "UP"}
-  }
-}
-```
-
-### 9. 测试登录
-
-```bash
+# 测试登录（默认账号 admin/123456 或 superadmin/123456）
 curl -X POST http://localhost:8080/auth/login \
   -H "Content-Type: application/json" \
-  -d '{
-    "userName": "admin",
-    "password": "123456"
-  }'
+  -d '{"userName": "admin", "password": "123456"}'
 ```
 
-如果返回Token，说明启动成功！🎉
-
----
-
-## ⚙️ 详细配置
-
-### 数据库配置
-
-#### R2DBC连接池
-
-```yaml
-spring:
-  r2dbc:
-    url: r2dbc:mysql://localhost:3306/product_test
-    username: root
-    password: your_password
-    pool:
-      initial-size: 10         # 初始连接数
-      max-size: 50            # 最大连接数
-      max-idle-time: 30m      # 最大空闲时间
-```
-
-#### 性能优化建议
-
-- `initial-size`: 根据预估的并发量设置，一般10-20
-- `max-size`: 不要设置过大，避免数据库连接耗尽
-- `max-idle-time`: 根据数据库的wait_timeout设置
-
-### Redis配置
-
-#### 连接池配置
-
-```yaml
-spring:
-  data:
-    redis:
-      host: localhost
-      port: 6379
-      password:
-      database: 0
-      timeout: 3000ms
-      lettuce:
-        pool:
-          max-active: 20      # 最大活跃连接
-          max-idle: 10        # 最大空闲连接
-          min-idle: 5         # 最小空闲连接
-          max-wait: 3000ms    # 最大等待时间
-```
-
-### JWT配置
-
-```yaml
-jwt:
-  secret: your-secret-key-at-least-256-bits
-  expiration: 604800000        # Token过期时间（毫秒）7天
-  refresh: 259200000           # Token刷新时间（毫秒）3天
-```
-
-**安全建议**：
-- 密钥长度至少256位
-- 生产环境通过环境变量注入：`${JWT_SECRET}`
-- 定期轮换密钥
-
-### 限流配置
-
-```yaml
-rate-limit:
-  enabled: true                # 是否启用限流
-  qps: 10                     # 每秒请求数限制
-  capacity: 20                # 令牌桶容量（突发流量）
-```
-
-**调优建议**：
-- `qps`: 根据实际业务设置，建议从保守值开始逐步调整
-- `capacity`: 一般设置为 qps 的 1.5-2 倍
-
-### IP黑白名单配置
-
-```yaml
-ip-filter:
-  # 黑名单配置
-  blacklist-enabled: false
-  blacklist:
-    - 192.168.1.100           # 单个IP
-    - 10.0.0.0/8              # IP段（CIDR格式）
-
-  # 白名单配置
-  whitelist-enabled: false
-  whitelist:
-    - 192.168.1.0/24          # 允许整个局域网
-    - 127.0.0.1               # 允许本机访问
-```
-
-### 签名验证配置
-
-```yaml
-signature:
-  enabled: false                              # 是否启用签名验证
-  secret: your-signature-secret-key
-  algorithm: MD5                              # 签名算法（MD5、SHA256）
-  timestamp-validity: 300                     # 时间戳有效期（秒）
-```
-
-**能力说明**
-
-- POST/PUT/PATCH 请求体自动缓存一次，根据 `Content-Type` 智能解析 JSON、表单参数后参与签名，不再局限于查询串；
-- 过滤器位于全局链路最前，签名失败立即返回结构化 JSON，避免下游重复处理；
-- 默认携带 `timestamp`、`nonce` 参与签名，可结合 Redis 做 Nonce 去重，增强防重放能力。
-
-### 响应缓存配置
-
-```yaml
-response-cache:
-  enabled: true                               # 是否启用响应缓存
-  ttl: 300                                    # 缓存过期时间（秒）
-```
-
-### 请求重试配置
-
-```yaml
-retry:
-  enabled: true                               # 是否启用请求重试
-```
-
-重试策略在代码中配置：
-- 最大重试次数：3次
-- 退避策略：指数退避（500ms → 1000ms → 2000ms）
-- 仅重试幂等方法（GET、PUT、DELETE、HEAD、OPTIONS）
-
-### 日志配置
-
-```yaml
-logging:
-  level:
-    root: INFO
-    com.sapiece.nova.sapiecegateway: DEBUG
-    org.springframework.r2dbc: DEBUG
-    org.springframework.cloud.gateway: DEBUG
-  pattern:
-    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{50} - %msg%n"
-  file:
-    name: logs/sapiece-gateway.log
-  logback:
-    rollingpolicy:
-      max-file-size: 10MB
-      max-history: 30
-```
-
----
-
-## 🛣️ 动态路由
-
-### 功能概述
-
-SAPiece Gateway 支持基于数据库的动态路由配置，实现路由的热更新和可视化管理。
-
-### 核心特性
-
-- ✅ 数据库驱动（sys_menu表）
-- ✅ 热更新（无需重启）
-- ✅ 支持多种断言（Path、Method、Header等）
-- ✅ 支持多种过滤器（StripPrefix、AddHeader等）
-- ✅ 与权限系统集成
-- ✅ RESTful管理接口
-
-### 快速配置
-
-#### 1. 更新表结构
-
-sys_menu表已包含路由相关字段：
-- `target_uri`: 目标服务URI（如 http://localhost:8081 或 lb://user-service）
-- `route_predicates`: 路由断言配置（JSON格式）
-- `route_filters`: 路由过滤器配置（JSON格式）
-- `menu_type`: 设置为 'R' 表示路由配置
-
-#### 2. 插入路由配置
-
-```sql
-INSERT INTO `sys_menu` (
-    `parent_id`, `menu_name`, `menu_type`, `menu_sort`, `permission_code`,
-    `target_uri`, `route_predicates`, `route_filters`,
-    `status`, `del_flag`, `creator`, `remark`
-) VALUES (
-    0,
-    '用户服务路由',
-    'R',                                           -- 路由类型
-    1,
-    'gateway:route:user-service',
-    'http://localhost:8081',                       -- 目标服务
-    '[{"name":"Path","args":{"pattern":"/api/user/**"}}]',  -- 路径断言
-    '[{"name":"StripPrefix","args":{"parts":"1"}}]',         -- 去除前缀
-    1,                                             -- 启用
-    0,
-    'admin',
-    '用户服务路由'
-);
-```
-
-#### 3. 应用启动自动加载
-
-应用启动时会自动从数据库加载所有满足条件的路由（`menu_type='R'`, `status=1`, `del_flag=0`）
-
-### 管理接口
-
-#### 查询所有路由
-
-```bash
-GET /gateway/routes/list
-Authorization: Bearer {token}
-```
-
-#### 刷新路由配置
-
-```bash
-POST /gateway/routes/refresh
-Authorization: Bearer {token}
-```
-
-#### 添加单个路由
-
-```bash
-POST /gateway/routes/add/{menuId}
-Authorization: Bearer {token}
-```
-
-#### 删除路由
-
-```bash
-DELETE /gateway/routes/delete/{routeId}
-Authorization: Bearer {token}
-```
-
-### 配置示例
-
-#### 示例1：基础路径路由
-
-```json
-{
-  "target_uri": "http://localhost:8081",
-  "route_predicates": [
-    {"name":"Path","args":{"pattern":"/api/user/**"}}
-  ],
-  "route_filters": [
-    {"name":"StripPrefix","args":{"parts":"1"}}
-  ]
-}
-```
-
-#### 示例2：方法限制
-
-```json
-{
-  "target_uri": "http://localhost:8083",
-  "route_predicates": [
-    {"name":"Path","args":{"pattern":"/api/product/**"}},
-    {"name":"Method","args":{"methods":"GET,POST"}}
-  ],
-  "route_filters": [
-    {"name":"StripPrefix","args":{"parts":"1"}}
-  ]
-}
-```
-
-#### 示例3：请求头匹配
-
-```json
-{
-  "target_uri": "http://localhost:8084",
-  "route_predicates": [
-    {"name":"Path","args":{"pattern":"/api/payment/**"}},
-    {"name":"Header","args":{"header":"X-Version","regexp":"v[1-9]"}}
-  ],
-  "route_filters": [
-    {"name":"StripPrefix","args":{"parts":"1"}},
-    {"name":"AddRequestHeader","args":{"name":"X-Gateway","value":"SAPiece"}}
-  ]
-}
-```
-
-### 详细文档
-
-完整的动态路由使用指南请参考：[DYNAMIC_ROUTE_README.md](DYNAMIC_ROUTE_README.md)
-
-### 路由权限匹配优化
-
-- 网关会将 `sys_gateway_route` 中启用的路由转换成可执行断言（Path + Method 等），并在内存中缓存，默认30秒自动刷新；
-- 支持在一个路由中配置多个 `Path`、`Method` 断言；缓存刷新后立即生效，避免频繁访问数据库；
-- 未显式配置 `Method` 时默认对所有方法生效，可通过 `Method` 断言限制特定 HTTP 动作。
-
-### WebSocket / gRPC 转发
-
-- **WebSocket**：`sys_gateway_route.uri` 支持 `ws://` 或 `lb:ws://`，保持 `Upgrade`、`Sec-WebSocket-Protocol` 头透传即可完成双向通信，其他过滤器（鉴权、限流、灰度）同样生效。
-- **gRPC**：开启 `server.http2.enabled=true` 后，可通过 `Method=POST` + `Header=Content-Type, application/grpc` 断言来识别 gRPC 流量，`uri` 可使用 `h2c://` 或 `lb://`。如需消息级治理，可在后端挂载 Envoy/Nginx gRPC 代理配合本网关。
-
----
-
-## 🔐 权限控制
-
-### RBAC权限模型
-
-系统采用经典的RBAC（Role-Based Access Control）模型：
-
-```
-用户(User) ──→ 用户角色(UserRole) ──→ 角色(Role) ──→ 角色菜单(RoleMenu) ──→ 菜单/权限(Menu)
-```
-
-### 数据库表设计
-
-| 表名 | 说明 | 关键字段 |
-|------|------|---------|
-| sys_user | 用户表 | id, user_name, password, nick_name, status |
-| sys_role | 角色表 | id, role_name, role_code, status |
-| sys_menu | 菜单权限表 | id, menu_name, permission_code, menu_type |
-| sys_user_role | 用户角色关联 | user_id, role_id |
-| sys_role_menu | 角色菜单关联 | role_id, menu_id |
-
-### 权限标识规范
-
-权限标识格式：`模块:资源:操作`
-
-#### 示例
-
-```
-system:user:list      # 查询用户列表
-system:user:add       # 添加用户
-system:user:update    # 更新用户
-system:user:delete    # 删除用户
-system:role:*         # 角色管理所有权限
-```
-
-### 权限注解使用
-
-#### 1. 基于权限码
-
-```java
-@PreAuthorize("hasAuthority('system:user:list')")
-@GetMapping("/users")
-public Mono<Result<List<User>>> getUserList() {
-    return userService.findAll()
-        .collectList()
-        .map(Result::success);
-}
-```
-
-#### 2. 基于角色
-
-```java
-@PreAuthorize("hasRole('ADMIN')")
-@DeleteMapping("/users/{id}")
-public Mono<Result<Void>> deleteUser(@PathVariable Long id) {
-    return userService.deleteById(id)
-        .then(Mono.just(Result.success()));
-}
-```
-
-#### 3. 组合条件
-
-```java
-@PreAuthorize("hasRole('ADMIN') or hasAuthority('system:user:update')")
-@PutMapping("/users/{id}")
-public Mono<Result<User>> updateUser(@PathVariable Long id, @RequestBody User user) {
-    return userService.update(id, user)
-        .map(Result::success);
-}
-```
-
-### 权限缓存策略
-
-用户登录后，权限信息会缓存到Redis，避免每次请求都查询数据库：
-
-```
-Key格式: user:permissions:{userId}
-过期时间: 与Token过期时间一致
-```
-
----
-
-## 📡 API接口文档
-
-### 认证相关
-
-#### 用户登录
-
-**接口**: `POST /auth/login`
-
-**请求参数**:
-
-```json
-{
-  "userName": "admin",
-  "password": "123456"
-}
-```
-
-**响应示例**:
+成功响应示例：
 
 ```json
 {
   "code": 200,
   "message": "登录成功",
   "data": {
-    "token": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhZG1pbiIsInVzZXJJZCI6MSwidXNlck5hbWUiOiJhZG1pbiIsInJvbGVzIjpbIkFETUlOIl0sInBlcm1pc3Npb25zIjpbInN5c3RlbTp1c2VyOmxpc3QiXSwiaWF0IjoxNzAwMDAwMDAwLCJleHAiOjE3MDA2MDQ4MDB9.xxx",
-    "userId": 1,
+    "accessToken": "eyJhbGci...",
+    "refreshToken": "eyJhbGci...",
+    "userId": 2,
     "userName": "admin",
-    "nickName": "管理员",
-    "roles": ["ADMIN"],
-    "permissions": ["system:user:list", "system:user:add"]
-  },
-  "timestamp": 1700000000000
+    "nickName": "管理员"
+  }
 }
 ```
 
-#### 获取用户信息
+---
 
-**接口**: `GET /auth/info`
+## ⚙️ 详细配置
 
-**请求头**: `Authorization: Bearer {token}`
+### JWT 配置
 
-**响应示例**:
+```yaml
+jwt:
+  secret: ${JWT_SECRET:SAPiece-Gateway-Secret-Key-2025-...}  # 生产必须通过环境变量注入
+  access-token-expiration: 1800000    # Access Token：30分钟
+  refresh-token-expiration: 604800000 # Refresh Token：7天
+```
+
+**安全要求**：
+- 密钥长度 ≥ 256 bits
+- 生产环境通过环境变量注入：`export JWT_SECRET=<your-secret>`
+- 每个 Token 包含 `jti`（UUID）防止同秒碰撞
+
+### 限流配置
+
+```yaml
+rate-limit:
+  enabled: true
+  strategy: route           # ip / route / user 三种策略
+
+  ip:
+    qps: 100                # 每 IP 每秒 100 请求
+    capacity: 200
+
+  route:
+    default-qps: 50         # 每路由默认 50 QPS
+    default-capacity: 100
+
+  user:
+    default-qps: 50
+    default-capacity: 100
+```
+
+### IP 黑白名单
+
+```yaml
+ip-filter:
+  blacklist-enabled: false
+  blacklist:
+    - 192.168.1.100           # 精确 IP
+    - 10.0.0.0/8              # CIDR 段
+
+  whitelist-enabled: false
+  whitelist:
+    - 192.168.0.0/16
+
+# 可信代理（仅来自这些 IP 的请求才信任 X-Forwarded-For）
+trusted-proxies:
+  - 127.0.0.1
+  - 10.70.0.0/16             # Nginx 内网段
+```
+
+### 下游签名配置
+
+```yaml
+gateway:
+  downstream-sign:
+    enabled: true
+    secret: ${GATEWAY_DOWNSTREAM_SECRET:change-me-in-production}
+    timestamp-validity-ms: 30000   # 签名有效期 30s，防重放
+```
+
+### HTTPS 配置
+
+```bash
+# 1. 生成自签证书（开发/测试用）
+chmod +x scripts/gen-keystore.sh
+./scripts/gen-keystore.sh
+# → 输出到 src/main/resources/ssl/gateway.p12
+
+# 2. 启用 HTTPS
+export SSL_ENABLED=true
+export SSL_KEY_STORE_PASSWORD=changeit  # 对应证书密码
+java -jar target/SAPiece-Gateway-*.jar
+```
+
+生产环境替换自签证书为 Let's Encrypt 或企业 CA 颁发的证书：
+
+```yaml
+server:
+  ssl:
+    enabled: ${SSL_ENABLED:false}
+    key-store: ${SSL_KEY_STORE:classpath:ssl/gateway.p12}
+    key-store-password: ${SSL_KEY_STORE_PASSWORD:changeit}
+    key-store-type: PKCS12
+    key-alias: gateway
+```
+
+---
+
+## 🛣️ 动态路由
+
+### 路由管理接口
+
+所有接口需要 `ADMIN` 或 `SUPER_ADMIN` 角色，请求头携带 `Authorization: Bearer {accessToken}`。
+
+| Method | 路径 | 说明 | 权限 |
+|--------|------|------|------|
+| GET | `/admin/route/list` | 查询所有路由 | `gateway:route:list` |
+| GET | `/admin/route/{id}` | 查询路由详情 | `gateway:route:query` |
+| POST | `/admin/route` | 新增路由 | `gateway:route:add` |
+| PUT | `/admin/route/{id}` | 修改路由 | `gateway:route:update` |
+| DELETE | `/admin/route/{id}` | 删除路由 | `gateway:route:delete` |
+| POST | `/admin/route/refresh` | 手动刷新路由缓存 | `gateway:route:refresh` |
+| GET | `/admin/route/stats` | 路由统计信息 | `gateway:route:list` |
+
+### 路由配置示例
+
+#### 1. 静态地址路由
+
+```bash
+curl -X POST http://localhost:8080/admin/route \
+  -H "Authorization: Bearer {token}" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "routeId": "user-service",
+    "routeName": "用户服务",
+    "uri": "http://user-service:8081",
+    "predicates": [{"name":"Path","args":{"pattern":"/api/user/**"}}],
+    "filters": [{"name":"StripPrefix","args":{"parts":"1"}}],
+    "orderNum": 1,
+    "status": 1,
+    "requireAuth": 1
+  }'
+```
+
+#### 2. 负载均衡路由（Nacos 服务发现）
 
 ```json
 {
-  "code": 200,
-  "message": "操作成功",
-  "data": {
-    "userId": 1,
-    "userName": "admin",
-    "nickName": "管理员",
-    "email": "admin@example.com",
-    "roles": ["ADMIN"],
-    "permissions": ["system:user:list"]
-  },
-  "timestamp": 1700000000000
+  "routeId": "order-service",
+  "routeName": "订单服务",
+  "uri": "lb://order-service",
+  "predicates": [{"name":"Path","args":{"pattern":"/api/order/**"}}],
+  "filters": [{"name":"StripPrefix","args":{"parts":"1"}}],
+  "orderNum": 2,
+  "status": 1
 }
 ```
 
-#### 刷新Token
+> `lb://order-service` 中 `order-service` 是下游服务注册到 Nacos 的 `spring.application.name`。
 
-**接口**: `POST /auth/refresh`
+#### 3. 手动刷新路由
 
-**请求头**: `Authorization: Bearer {old_token}`
-
-**响应示例**:
-
-```json
-{
-  "code": 200,
-  "message": "Token刷新成功",
-  "data": {
-    "token": "new_token_string"
-  },
-  "timestamp": 1700000000000
-}
+```bash
+curl -X POST http://localhost:8080/admin/route/refresh \
+  -H "Authorization: Bearer {token}"
 ```
 
-#### 用户登出
+路由变更后会通过 Redis Pub/Sub 自动通知所有网关实例刷新缓存，`POST /admin/route/refresh` 用于强制立即刷新。
 
-**接口**: `POST /auth/logout`
+---
 
-**请求头**: `Authorization: Bearer {token}`
+## 🔐 权限控制
 
-**响应示例**:
+### RBAC 模型
+
+```
+用户 → 用户角色关联 → 角色 → 角色菜单关联 → 菜单/权限
+```
+
+### 内置角色
+
+| 角色 | role_code | 说明 |
+|------|-----------|------|
+| 超级管理员 | SUPER_ADMIN | 绕过所有权限校验 |
+| 管理员 | ADMIN | 可访问所有 `/admin/**` 接口 |
+| 系统运维 | SYS_OPS | 路由和监控权限 |
+
+### 内置测试账号（密码均为 123456）
+
+| 用户名 | ID | 角色 |
+|--------|----|------|
+| superadmin | 1 | SUPER_ADMIN |
+| admin | 2 | ADMIN |
+| sysadmin | 3 | SYS_OPS |
+
+### 权限注解
+
+```java
+// 方法级权限
+@PreAuthorize("hasAuthority('gateway:route:update')")
+@PutMapping("/{id}")
+public Mono<Result<SysGatewayRoute>> update(...) { }
+
+// 角色判断
+@PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
+@RestController
+public class AdminController { }
+```
+
+---
+
+## 🌐 服务发现与配置中心
+
+### Nacos 服务注册
+
+网关启动后自动注册到 Nacos，可在 Nacos 控制台 `服务管理 → 服务列表` 中看到 `sapiece-gateway`。
+
+配置（`application.yml`）：
+
+```yaml
+spring:
+  cloud:
+    nacos:
+      discovery:
+        server-addr: 10.70.239.17:8848
+        username: nacos
+        password: nacos
+        namespace: public
+        group: DEFAULT_GROUP
+        register-enabled: true
+        ip: ${POD_IP:}   # K8s 中通过环境变量注入 Pod IP
+```
+
+### 下游服务如何使用 Nacos
+
+下游服务也注册到同一个 Nacos，网关路由 URI 使用 `lb://service-name`，Spring Cloud LoadBalancer 自动轮询健康实例。
+
+```yaml
+# 下游服务（示例：user-service）
+spring:
+  application:
+    name: user-service
+  cloud:
+    nacos:
+      discovery:
+        server-addr: 10.70.239.17:8848
+```
+
+### Nacos 配置中心
+
+网关支持从 Nacos 加载配置，配置文件名为 `sapiece-gateway.yaml`，Group 为 `DEFAULT_GROUP`。
+
+```yaml
+# application.yml
+spring:
+  config:
+    import: "optional:nacos:${spring.application.name}.yaml"
+```
+
+**`optional:`** 前缀确保 Nacos 不可用时，网关仍能以本地配置启动，不影响可用性。
+
+在 Nacos 控制台可热更新的配置（示例）：
+
+```yaml
+# sapiece-gateway.yaml（在 Nacos 中创建）
+rate-limit:
+  enabled: true
+  strategy: route
+  route:
+    default-qps: 100
+
+ip-filter:
+  blacklist-enabled: true
+  blacklist:
+    - 1.2.3.4
+```
+
+---
+
+## ⚡ 熔断降级（Sentinel）
+
+### 架构分工
+
+| 组件 | 职责 |
+|------|------|
+| **EnhancedRateLimitFilter** | 全局限流（IP/用户/路由维度，Lua Token Bucket）|
+| **Sentinel GatewayFilter** | 下游服务熔断降级（慢调用 + 异常比率触发）|
+
+两者独立运行，不冲突。
+
+### 熔断规则配置
+
+#### 方式 1：Nacos 持久化（推荐生产使用）
+
+在 Nacos 中创建配置：
+
+- DataId：`sapiece-gateway-degrade-rules`
+- Group：`SENTINEL_GROUP`
+- 内容（JSON）：
+
+```json
+[
+  {
+    "resource": "user-service",
+    "grade": 0,
+    "count": 2000,
+    "slowRatioThreshold": 0.5,
+    "minRequestAmount": 5,
+    "statIntervalMs": 10000,
+    "timeWindow": 10
+  },
+  {
+    "resource": "order-service",
+    "grade": 1,
+    "count": 0.5,
+    "minRequestAmount": 5,
+    "statIntervalMs": 10000,
+    "timeWindow": 10
+  }
+]
+```
+
+字段说明：
+- `grade=0`：慢调用比率熔断；`grade=1`：异常比率熔断
+- `count`（grade=0）：慢调用阈值，单位 ms
+- `count`（grade=1）：异常比率，0.5 = 50%
+- `timeWindow`：熔断持续时间，单位 s
+
+#### 方式 2：Sentinel Dashboard
+
+访问 Sentinel Dashboard（需部署），在 `熔断规则` 中添加规则。`resource` 对应 `sys_gateway_route.route_id` 字段。
+
+### 熔断响应格式
+
+熔断触发时，下游返回 HTTP 503：
 
 ```json
 {
-  "code": 200,
-  "message": "登出成功",
+  "code": 503,
+  "message": "下游服务繁忙，请稍后重试",
   "data": null,
-  "timestamp": 1700000000000
+  "success": false,
+  "timestamp": 1777164000000
 }
 ```
 
-### 路由管理
+---
 
-#### 查询所有路由
+## 🔭 链路追踪（OpenTelemetry）
 
-**接口**: `GET /gateway/routes/list`
+### 工作原理
 
-**权限**: `system:route:query`
+```
+客户端请求
+  → 网关生成 traceId / spanId（OTel SDK 自动）
+  → TraceHeaderGatewayFilter 注入下游请求头：
+      X-Trace-Id: 7a918f83b6d352abf35c094ed12aa63b
+      X-Span-Id:  1f6d148ab70db1b7
+      traceparent: 00-7a918f83b6d352abf35c094ed12aa63b-1f6d148ab70db1b7-01
+  → 下游服务 OTel SDK 识别 traceparent，自动创建子 Span
+  → 所有 Span 上报到 Jaeger（OTLP gRPC）
+  → Jaeger UI 展示完整调用链
+```
 
-**响应示例**:
+### 配置
 
-```json
-{
-  "code": 200,
-  "message": "操作成功",
-  "data": [
-    {
-      "id": "route-1",
-      "uri": "http://localhost:8081",
-      "predicates": [...],
-      "filters": [...],
-      "order": 1,
-      "metadata": {
-        "menuId": 1,
-        "menuName": "用户服务路由"
-      }
+```yaml
+management:
+  tracing:
+    enabled: true
+    sampling:
+      probability: 1.0    # 开发：全采样；生产建议 0.1~0.2
+
+otel:
+  exporter:
+    otlp:
+      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4317}
+      protocol: grpc
+  service:
+    name: ${spring.application.name}
+```
+
+### 本地 Jaeger 快速启动
+
+```bash
+docker run -d --name jaeger \
+  -e COLLECTOR_OTLP_ENABLED=true \
+  -p 16686:16686 \
+  -p 4317:4317 \
+  jaegertracing/all-in-one:latest
+```
+
+Jaeger UI：http://localhost:16686
+
+### 下游服务接入
+
+下游服务添加相同的 OTel 依赖，并配置相同的 Jaeger 地址。`traceparent` header 会被 OTel SDK 自动识别，无需额外代码即可在 Jaeger 中看到完整调用链。
+
+```xml
+<!-- 下游服务 pom.xml -->
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-opentelemetry</artifactId>
+</dependency>
+```
+
+---
+
+## 🔑 下游信任（HMAC 签名）
+
+### 问题背景
+
+如果下游服务直接暴露在内网，恶意请求可以绕过网关直接调用，伪造 `X-User-Id` 等 header。HMAC 签名解决这个问题。
+
+### 网关行为
+
+每次请求转发给下游时，网关自动注入：
+
+```
+X-Gateway-Timestamp: 1777164000123        ← 毫秒时间戳
+X-Gateway-Signature: c81874230db87a...    ← HMAC-SHA256 签名
+X-User-Id:          2                     ← 真实用户 ID（认证后）
+X-User-Name:        admin
+X-User-Roles:       ADMIN,SUPER_ADMIN
+X-User-Permissions: gateway:route:list,...
+traceparent:        00-{traceId}-{spanId}-01
+```
+
+签名算法：
+
+```
+payload = "timestamp={ts}&userId={userId}&path={requestPath}"
+signature = HMAC-SHA256(GATEWAY_DOWNSTREAM_SECRET, payload)
+```
+
+### 下游服务验证（Java 示例）
+
+```java
+@Component
+public class GatewaySignatureVerifier {
+
+    @Value("${gateway.downstream-sign.secret}")
+    private String secret;
+
+    public boolean verify(HttpServletRequest request) {
+        String timestamp = request.getHeader("X-Gateway-Timestamp");
+        String signature = request.getHeader("X-Gateway-Signature");
+        String userId    = request.getHeader("X-User-Id");
+        String path      = request.getRequestURI();
+
+        if (timestamp == null || signature == null) return false;
+
+        // 验证时间窗口（防重放，30s 内有效）
+        long ts = Long.parseLong(timestamp);
+        if (Math.abs(System.currentTimeMillis() - ts) > 30_000) return false;
+
+        // 计算期望签名
+        String payload = "timestamp=" + ts + "&userId=" + userId + "&path=" + path;
+        String expected = hmacSHA256(secret, payload);
+        return expected.equalsIgnoreCase(signature);
     }
-  ],
-  "timestamp": 1700000000000
 }
 ```
 
-#### 刷新所有路由
+也可直接复制 `GatewaySignatureUtil.java` 到下游服务使用。
 
-**接口**: `POST /gateway/routes/refresh`
+### 环境变量同步
 
-**权限**: `system:route:refresh`
+```bash
+# 网关和所有下游服务必须设置相同的值
+export GATEWAY_DOWNSTREAM_SECRET=your-shared-secret-here
+```
 
-**响应示例**:
+---
+
+## 🛡️ 安全加固
+
+### Security Headers
+
+所有响应自动注入以下安全响应头：
+
+| Header | 值 | 防御目标 |
+|--------|----|---------|
+| `Content-Security-Policy` | `default-src 'none'; frame-ancestors 'none'` | XSS / 数据注入 |
+| `X-Frame-Options` | `DENY` | 点击劫持（Clickjacking）|
+| `X-Content-Type-Options` | `nosniff` | MIME 嗅探攻击 |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` | Referer 信息泄露 |
+| `Permissions-Policy` | `geolocation=(), microphone=(), camera=()` | 浏览器 API 滥用 |
+| `Strict-Transport-Security` | `max-age=31536000; includeSubDomains` | 强制 HTTPS（仅 HTTPS 部署有效）|
+| `Cache-Control` | `no-store` | 认证接口响应不缓存 |
+
+Server 和 X-Powered-By 头已自动移除，防止服务器信息泄露。
+
+### XFF 可信代理防伪造
+
+只有来自配置的可信代理 IP 的请求，才信任其 `X-Forwarded-For` header：
+
+```yaml
+trusted-proxies:
+  - 10.70.0.0/16    # Nginx 内网 IP 段
+  - 127.0.0.1
+```
+
+未在列表中的 IP 发来的 XFF header 会被忽略，直接用 `RemoteAddress` 作为客户端 IP。
+
+---
+
+## 📡 API 接口文档
+
+### 认证接口
+
+#### POST /auth/login — 用户登录
+
+```bash
+curl -X POST http://localhost:8080/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"userName":"admin","password":"123456"}'
+```
+
+响应：
 
 ```json
 {
   "code": 200,
-  "message": "路由刷新成功，共加载 5 条路由",
-  "data": null,
-  "timestamp": 1700000000000
+  "message": "登录成功",
+  "data": {
+    "accessToken": "eyJhbGci...",   // 30分钟有效
+    "refreshToken": "eyJhbGci...",  // 7天有效
+    "userId": 2,
+    "userName": "admin",
+    "nickName": "管理员"
+  }
 }
 ```
 
-### 管理员接口
+#### GET /auth/info — 获取当前用户信息
 
-#### 创建用户
-
-**接口**: `POST /admin/users`
-
-**权限**: `system:user:add`
-
-**请求参数**:
-
-```json
-{
-  "userName": "test",
-  "password": "123456",
-  "nickName": "测试用户",
-  "email": "test@example.com",
-  "roleIds": [2]
-}
+```bash
+curl http://localhost:8080/auth/info \
+  -H "Authorization: Bearer {accessToken}"
 ```
 
-### API文档访问
+#### POST /auth/refresh/token — 刷新 Access Token（双 Token 模式）
 
-启动应用后，访问：
+```bash
+curl -X POST http://localhost:8080/auth/refresh/token \
+  -H "Content-Type: application/json" \
+  -d '{"refreshToken":"eyJhbGci..."}'
+```
 
+> **注意**：刷新成功后旧 Refresh Token 立即失效（黑名单），需使用新的 Token 对。
+
+#### POST /auth/logout — 登出
+
+```bash
+curl -X POST http://localhost:8080/auth/logout \
+  -H "Authorization: Bearer {accessToken}"
 ```
-http://localhost:8080/doc.html
+
+### 路由管理接口
+
+所有路由管理接口需要 `ADMIN` 或 `SUPER_ADMIN` 角色。
+
+```bash
+# 查询路由列表
+curl http://localhost:8080/admin/route/list \
+  -H "Authorization: Bearer {token}"
+
+# 刷新路由缓存（强制）
+curl -X POST http://localhost:8080/admin/route/refresh \
+  -H "Authorization: Bearer {token}"
+
+# 路由统计
+curl http://localhost:8080/admin/route/stats \
+  -H "Authorization: Bearer {token}"
 ```
+
+### 管理接口
+
+```bash
+# IP 黑名单查询
+curl http://localhost:8080/admin/ip/blacklist \
+  -H "Authorization: Bearer {token}"
+
+# 添加 IP 到黑名单
+curl -X POST http://localhost:8080/admin/ip/blacklist \
+  -H "Authorization: Bearer {token}" \
+  -H "Content-Type: application/json" \
+  -d '{"ip":"1.2.3.4"}'
+
+# 审计日志时间范围查询（注意日期格式：yyyy-MM-dd HH:mm:ss）
+curl -X POST http://localhost:8080/admin/audit-log/time-range \
+  -H "Authorization: Bearer {token}" \
+  -H "Content-Type: application/json" \
+  -d '{"startTime":"2026-01-01 00:00:00","endTime":"2027-01-01 00:00:00"}'
+
+# 灰度规则列表
+curl http://localhost:8080/admin/gray/rules \
+  -H "Authorization: Bearer {token}"
+```
+
+### Knife4j 在线文档
+
+启动后访问：http://localhost:8080/doc.html
 
 ---
 
 ## 🚢 部署指南
 
-### Docker部署
-
-#### 1. 构建Docker镜像
-
-创建 `Dockerfile`:
-
-```dockerfile
-FROM openjdk:21-jdk-slim
-VOLUME /tmp
-ARG JAR_FILE=target/*.jar
-COPY ${JAR_FILE} app.jar
-ENTRYPOINT ["java","-jar","/app.jar"]
-```
-
-构建镜像：
+### 方式 1：本地开发
 
 ```bash
+java -jar target/SAPiece-Gateway-0.0.1-SNAPSHOT.jar \
+  --spring.profiles.active=dev
+```
+
+### 方式 2：docker-compose HA 部署
+
+#### 架构
+
+```
+nginx (80/443) → gateway×N (8080) → MySQL + Redis + Nacos
+                                   → Jaeger (链路追踪)
+                                   → Prometheus → Grafana
+```
+
+#### 启动
+
+```bash
+# 构建镜像
 mvn clean package -DskipTests
 docker build -t sapiece-gateway:latest .
-```
 
-#### 2. 使用Docker Compose
-
-创建 `docker-compose.yml`:
-
-```yaml
-version: '3.8'
-
-services:
-  mysql:
-    image: mysql:8.0
-    container_name: sapiece-mysql
-    environment:
-      MYSQL_ROOT_PASSWORD: root123
-      MYSQL_DATABASE: product_test
-    ports:
-      - "3306:3306"
-    volumes:
-      - ./mysql-data:/var/lib/mysql
-      - ./sql:/docker-entrypoint-initdb.d
-
-  redis:
-    image: redis:7-alpine
-    container_name: sapiece-redis
-    ports:
-      - "6379:6379"
-
-  gateway:
-    image: sapiece-gateway:latest
-    container_name: sapiece-gateway
-    depends_on:
-      - mysql
-      - redis
-    environment:
-      SPRING_PROFILES_ACTIVE: prod
-      SPRING_R2DBC_URL: r2dbc:mysql://mysql:3306/product_test
-      SPRING_R2DBC_USERNAME: root
-      SPRING_R2DBC_PASSWORD: root123
-      SPRING_REDIS_HOST: redis
-      JWT_SECRET: your-production-secret-key-at-least-256-bits
-    ports:
-      - "8080:8080"
-```
-
-启动服务：
-
-```bash
+# 单实例启动
 docker-compose up -d
+
+# HA：2 个网关实例
+docker-compose up -d --scale gateway=2
+
+# HA：3 个网关实例
+docker-compose up -d --scale gateway=3
 ```
 
-### Kubernetes部署
+#### 访问
 
-#### 1. 创建ConfigMap
+| 服务 | 地址 |
+|------|------|
+| 网关（HTTP） | http://localhost:80 |
+| 网关（HTTPS）| https://localhost:443 |
+| Jaeger UI | http://localhost:16686 |
+| Prometheus | http://localhost:9090 |
+| Grafana | http://localhost:3000（admin/admin123）|
 
-```yaml
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: gateway-config
-data:
-  application-prod.yml: |
-    spring:
-      r2dbc:
-        url: r2dbc:mysql://mysql-service:3306/product_test
-        username: root
-        password: ${MYSQL_PASSWORD}
-      data:
-        redis:
-          host: redis-service
-          port: 6379
+#### 关键环境变量
+
+在 `docker-compose.yml` 中或通过 `.env` 文件配置：
+
+```env
+DB_HOST=10.70.239.17
+DB_USER=sapiece
+DB_PASSWORD=159357
+REDIS_HOST=10.70.239.17
+NACOS_HOST=10.70.239.17
+JWT_SECRET=your-secret
+GATEWAY_DOWNSTREAM_SECRET=your-hmac-secret
+GRAFANA_PASSWORD=admin123
 ```
 
-#### 2. 创建Deployment
+### 方式 3：Kubernetes 生产部署
 
-```yaml
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: sapiece-gateway
-spec:
-  replicas: 3
-  selector:
-    matchLabels:
-      app: gateway
-  template:
-    metadata:
-      labels:
-        app: gateway
-    spec:
-      containers:
-      - name: gateway
-        image: sapiece-gateway:latest
-        ports:
-        - containerPort: 8080
-        env:
-        - name: SPRING_PROFILES_ACTIVE
-          value: "prod"
-        - name: JWT_SECRET
-          valueFrom:
-            secretKeyRef:
-              name: gateway-secrets
-              key: jwt-secret
-        volumeMounts:
-        - name: config
-          mountPath: /config
-      volumes:
-      - name: config
-        configMap:
-          name: gateway-config
-```
+#### 前置条件
 
-#### 3. 创建Service
+- K8s 集群（1.24+）
+- 已推送镜像到 Registry（修改 `k8s/deployment.yaml` 中的 image）
 
-```yaml
-apiVersion: v1
-kind: Service
-metadata:
-  name: gateway-service
-spec:
-  type: LoadBalancer
-  ports:
-  - port: 80
-    targetPort: 8080
-  selector:
-    app: gateway
-```
-
-### 云服务部署
-
-#### 阿里云ECS
-
-1. 安装Java 21、MySQL、Redis
-2. 配置安全组（开放8080端口）
-3. 上传jar包并运行：
+#### 部署步骤
 
 ```bash
-nohup java -jar SAPiece-Gateway-0.0.1-SNAPSHOT.jar \
-  --spring.profiles.active=prod \
-  > gateway.log 2>&1 &
+# 1. 创建命名空间
+kubectl apply -f k8s/namespace.yaml
+
+# 2. 修改 Secret 中的敏感配置
+vim k8s/configmap.yaml  # 修改 stringData 中的密码等
+
+# 3. 部署配置
+kubectl apply -f k8s/configmap.yaml
+
+# 4. 部署应用
+kubectl apply -f k8s/deployment.yaml
+kubectl apply -f k8s/service.yaml
+kubectl apply -f k8s/hpa.yaml
+
+# 5. 查看部署状态
+kubectl get pods -n sapiece
+kubectl get svc -n sapiece
+kubectl get hpa -n sapiece
 ```
 
-#### 使用systemd管理
+#### HPA 扩缩策略
 
-创建 `/etc/systemd/system/sapiece-gateway.service`:
+| 指标 | 阈值 | 行为 |
+|------|------|------|
+| CPU 使用率 | >70% | 快速扩容（每次 +2 Pod，间隔 60s）|
+| 内存使用率 | >80% | 快速扩容 |
+| 缩容 | 稳定 5 分钟 | 保守缩容（每次 -1 Pod，间隔 120s）|
+| 最小副本 | 2 | 保证 HA |
+| 最大副本 | 10 | 防止无限扩容 |
+
+#### 健康探针
+
+- **Startup Probe**：等待 Nacos 注册完成（最长等 60s）
+- **Liveness Probe**：检测应用是否卡死，失败后重启
+- **Readiness Probe**：检测是否就绪接收流量，未就绪时从 Service 摘除
+
+```yaml
+livenessProbe:
+  httpGet:
+    path: /actuator/health/liveness
+    port: 8080
+readinessProbe:
+  httpGet:
+    path: /actuator/health/readiness
+    port: 8080
+```
+
+### 方式 4：systemd 服务（传统部署）
 
 ```ini
+# /etc/systemd/system/sapiece-gateway.service
 [Unit]
 Description=SAPiece Gateway
-After=syslog.target network.target
+After=network.target
 
 [Service]
-User=app
-ExecStart=/usr/bin/java -jar /opt/sapiece-gateway/SAPiece-Gateway.jar --spring.profiles.active=prod
+User=sapiece
+WorkingDirectory=/opt/sapiece-gateway
+ExecStart=/usr/bin/java \
+  -XX:+UseZGC \
+  -XX:MaxRAMPercentage=75.0 \
+  -Djava.security.egd=file:/dev/./urandom \
+  -jar SAPiece-Gateway.jar \
+  --spring.profiles.active=prod
 SuccessExitStatus=143
 Restart=always
 RestartSec=10
+EnvironmentFile=/opt/sapiece-gateway/.env
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-启动服务：
-
 ```bash
 systemctl daemon-reload
-systemctl start sapiece-gateway
-systemctl enable sapiece-gateway
+systemctl enable --now sapiece-gateway
 ```
 
 ---
 
 ## 📊 监控运维
 
-### 健康检查
-
-#### Actuator端点
+### Actuator 端点
 
 | 端点 | 说明 |
 |------|------|
-| `/actuator/health` | 健康状态 |
-| `/actuator/info` | 应用信息 |
-| `/actuator/metrics` | 性能指标 |
-| `/actuator/prometheus` | Prometheus格式指标 |
+| `/actuator/health` | 健康状态（含 DB/Redis/Sentinel/JVM）|
+| `/actuator/health/liveness` | K8s Liveness Probe |
+| `/actuator/health/readiness` | K8s Readiness Probe |
+| `/actuator/info` | 应用版本信息 |
+| `/actuator/metrics` | Micrometer 指标 |
+| `/actuator/prometheus` | Prometheus 格式指标 |
 
-#### 自定义健康检查
+### Prometheus + Grafana
 
-系统实现了以下健康检查：
+`deploy/prometheus/prometheus.yml` 已配置自动发现网关实例。
 
-1. **R2DBC健康检查** - 检查数据库连接
-2. **Redis健康检查** - 检查Redis连接
-3. **系统健康检查** - 检查CPU、内存使用率
+推荐 Grafana Dashboard：
+- **Spring Boot**：Dashboard ID `4701`（Spring Boot 2.x/3.x/4.x Micrometer）
+- **JVM**：Dashboard ID `11955`
+
+### Jaeger 链路追踪
+
+1. 确认 `OTEL_EXPORTER_OTLP_ENDPOINT` 指向 Jaeger（docker-compose 中为 `http://jaeger:4317`）
+2. 访问 Jaeger UI：`http://localhost:16686`
+3. 在 `Service` 下拉选择 `sapiece-gateway`，查看请求追踪详情
 
 ### 日志管理
 
-#### 日志级别动态调整
+日志文件：`logs/sapiece-gateway.log`（滚动，每文件 10MB，保留 30 天）
 
-通过Actuator动态调整日志级别（需启用loggers端点）：
-
-```bash
-# 查看当前日志级别
-curl http://localhost:8080/actuator/loggers/com.sapiece.nova.sapiecegateway
-
-# 调整日志级别为DEBUG
-curl -X POST http://localhost:8080/actuator/loggers/com.sapiece.nova.sapiecegateway \
-  -H "Content-Type: application/json" \
-  -d '{"configuredLevel": "DEBUG"}'
-```
-
-#### 日志收集
-
-推荐使用ELK/EFK栈收集日志：
+日志格式示例（包含 traceId）：
 
 ```
-应用日志 → Filebeat → Logstash → Elasticsearch → Kibana
+2026-04-26 15:30:12.953 [reactor-http-nio-2] INFO  c.s.n.s.security.JwtSecurityContextRepository - 【JWT认证】认证成功, user: admin, path: /api/user/list
 ```
 
-### 性能监控
+ELK 接入：日志格式为结构化 JSON（通过 logstash-logback-encoder），可直接发送到 Logstash。
 
-#### Prometheus + Grafana
-
-1. 启用Prometheus端点（已默认启用）
-2. 配置Prometheus抓取指标：
-
-```yaml
-scrape_configs:
-  - job_name: 'sapiece-gateway'
-    metrics_path: '/actuator/prometheus'
-    static_configs:
-      - targets: ['gateway:8080']
-```
-
-3. 在Grafana中导入Spring Boot仪表板
-
-#### SkyWalking 链路追踪
-
-- 通过 `JAVA_TOOL_OPTIONS="-javaagent:/path/to/skywalking-agent.jar"` 注入 SkyWalking Agent 后，链路数据会自动上报；
-- 网关内部的 `LogContext` 默认尝试读取 `TraceContext.traceId()`，日志里的 `traceId` 与 SkyWalking 控制台保持一致；
-- 如果需要把 `traceId` 返回给调用方，可在全局过滤器中读取 `LogContext.getTraceId()` 并写到响应头，方便排查问题。
-
-### 告警配置
-
-#### Prometheus告警规则
+### 告警规则示例（Prometheus Alertmanager）
 
 ```yaml
 groups:
-  - name: gateway_alerts
+  - name: gateway
     rules:
       - alert: HighErrorRate
-        expr: rate(http_server_requests_seconds_count{status=~"5.."}[5m]) > 0.1
-        for: 5m
-        labels:
-          severity: warning
+        expr: rate(http_server_requests_seconds_count{status=~"5.."}[5m]) > 0.05
+        for: 3m
         annotations:
-          summary: "网关错误率过高"
+          summary: "网关 5xx 错误率过高（>5%）"
+
+      - alert: SentinelCircuitOpen
+        expr: increase(sentinel_pass_total{result="block"}[1m]) > 100
+        annotations:
+          summary: "Sentinel 熔断频繁触发"
 ```
-
----
-
-## ⚡ 性能调优
-
-### JVM参数优化
-
-#### 推荐配置（4GB内存）
-
-```bash
-java -jar SAPiece-Gateway.jar \
-  -Xms2g \
-  -Xmx2g \
-  -XX:+UseG1GC \
-  -XX:MaxGCPauseMillis=200 \
-  -XX:+HeapDumpOnOutOfMemoryError \
-  -XX:HeapDumpPath=/logs/heapdump.hprof \
-  -Dspring.profiles.active=prod
-```
-
-#### 参数说明
-
-- `-Xms2g -Xmx2g`: 堆内存2GB（初始值和最大值相同，避免动态扩容）
-- `-XX:+UseG1GC`: 使用G1垃圾回收器（推荐）
-- `-XX:MaxGCPauseMillis=200`: GC暂停时间目标200ms
-- `-XX:+HeapDumpOnOutOfMemoryError`: OOM时自动dump堆内存
-
-### 连接池优化
-
-#### R2DBC连接池
-
-```yaml
-spring:
-  r2dbc:
-    pool:
-      initial-size: 20        # 根据并发量调整
-      max-size: 100           # 不超过数据库max_connections
-      max-idle-time: 30m
-      validation-query: SELECT 1
-```
-
-#### Redis连接池
-
-```yaml
-spring:
-  data:
-    redis:
-      lettuce:
-        pool:
-          max-active: 50
-          max-idle: 20
-          min-idle: 10
-```
-
-### Reactor线程模型优化
-
-WebFlux使用事件循环模型，线程数不宜过多：
-
-```yaml
-spring:
-  reactor:
-    netty:
-      ioWorkerCount: 8        # IO工作线程数，一般为CPU核心数
-```
-
-### 缓存策略优化
-
-1. **热点数据缓存**: 用户信息、权限、配置等
-2. **缓存预热**: 应用启动时预加载热点数据
-3. **缓存更新**: 使用发布订阅模式实现多实例缓存同步
-
----
-
-## 🔒 安全最佳实践
-
-### 1. JWT安全
-
-#### 密钥管理
-
-```bash
-# 通过环境变量注入（推荐）
-export JWT_SECRET="your-production-secret-key-at-least-256-bits"
-java -jar SAPiece-Gateway.jar
-```
-
-#### Token黑名单
-
-用户登出时将Token加入黑名单：
-
-```java
-tokenBlacklistService.addToBlacklist(token);
-```
-
-### 2. 密码安全
-
-#### 密码策略
-
-- 最小长度：8位
-- 必须包含：大写字母、小写字母、数字、特殊字符
-- 使用BCrypt加密存储
-
-#### 密码加密
-
-```java
-@Bean
-public PasswordEncoder passwordEncoder() {
-    return new BCryptPasswordEncoder(10); // strength=10
-}
-```
-
-### 3. HTTPS配置
-
-#### 生成证书
-
-```bash
-keytool -genkeypair -alias sapiece-gateway \
-  -keyalg RSA -keysize 2048 \
-  -storetype PKCS12 \
-  -keystore keystore.p12 \
-  -validity 3650
-```
-
-#### 配置SSL
-
-```yaml
-server:
-  port: 8443
-  ssl:
-    enabled: true
-    key-store: classpath:keystore.p12
-    key-store-password: your_password
-    key-store-type: PKCS12
-    key-alias: sapiece-gateway
-```
-
-### 4. SQL注入防护
-
-- 使用参数化查询（R2DBC自动处理）
-- 避免字符串拼接SQL
-- 输入验证和过滤
-
-### 5. XSS防护
-
-- 响应头设置：
-
-```yaml
-X-Content-Type-Options: nosniff
-X-Frame-Options: DENY
-X-XSS-Protection: 1; mode=block
-Content-Security-Policy: default-src 'self'
-```
-
-### 6. 限流防护
-
-- IP限流：防止单IP恶意请求
-- 用户限流：防止单用户滥用
-- 接口限流：保护关键接口
 
 ---
 
 ## ❓ 常见问题
 
-### Q1: 启动时报"Bean名称冲突"错误
+### Q1：启动报 `found duplicate key management`
 
-**问题**: `BeanDefinitionOverrideException: Invalid bean definition with name 'routeRefreshListener'`
+**原因**：`application.yml` 中有重复的 `management:` 顶级 key（YAML 不允许）。
 
-**解决方案**:
-已修复。我们的监听器已重命名为 `DynamicRouteLoader`，避免与Spring Cloud Gateway内置的Bean冲突。
+**解决**：检查 application.yml，将所有 management 配置合并到一个块。
 
 ---
 
-### Q2: 动态路由加载失败，报SpEL错误
+### Q2：Nacos 注册慢（`Cannot determine local hostname`）
 
-**问题**: `SpelEvaluationException: EL1005E: Type cannot be found 'System'`
+**原因**：macOS 环境下 DNS 解析本机 hostname 超时。
 
-**原因**:
-过滤器参数中使用了 `#{T(System).currentTimeMillis()}` 等SpEL表达式，但Gateway的SimpleEvaluationContext不支持类型引用。
+**解决**：在 Nacos Discovery 配置中显式指定 IP：
 
-**解决方案**:
-使用静态字符串值替代SpEL表达式：
+```yaml
+spring:
+  cloud:
+    nacos:
+      discovery:
+        ip: 127.0.0.1   # 开发环境填本机 IP；K8s 中用 ${POD_IP}
+```
+
+---
+
+### Q3：登出后立即登录，新 Token 被识别为黑名单中
+
+**原因**：同一秒内生成的 JWT 若缺少 `jti`（JWT ID），内容相同导致 MD5 哈希碰撞。
+
+**状态**：已修复（`JwtUtil.java` 中每个 Token 包含 `IdUtil.simpleUUID()` 作为 jti）。
+
+---
+
+### Q4：路由更新后未立即生效
+
+**原因**：路由定义有 30s TTL 缓存，多实例间通过 Redis Pub/Sub 同步。
+
+**解决**：调用 `POST /admin/route/refresh` 强制立即刷新。如需缩短自动刷新时间，修改 `DatabaseRouteDefinitionRepository.CACHE_TTL_MS`。
+
+---
+
+### Q5：`401 Token无效` 但 Token 刚签发
+
+**排查步骤**：
+1. 确认请求头格式：`Authorization: Bearer {accessToken}`（注意有空格）
+2. 确认使用 `accessToken` 不是 `refreshToken`（refresh token 不能用于 API 访问）
+3. 检查是否调用了 `/auth/refresh/token` 刷新，旧 Refresh Token 已失效，需使用新 Access Token
+
+---
+
+### Q6：审计日志时间范围查询报 `No request body`
+
+**原因**：日期格式错误，`@JsonFormat` 要求 `yyyy-MM-dd HH:mm:ss`（空格，非 T）。
+
+**正确格式**：
 
 ```json
-// ❌ 错误
-{"name":"AddRequestHeader","args":{"name":"X-Time","value":"#{T(System).currentTimeMillis()}"}}
-
-// ✅ 正确
-{"name":"AddRequestHeader","args":{"name":"X-Gateway","value":"SAPiece-Gateway"}}
-```
-
----
-
-### Q3: 数据库连接失败
-
-**问题**: `Unable to connect to database`
-
-**排查步骤**:
-1. 检查MySQL是否启动：`systemctl status mysql`
-2. 检查端口是否开放：`netstat -an | grep 3306`
-3. 检查用户名密码是否正确
-4. 检查数据库URL格式：`r2dbc:mysql://localhost:3306/database_name`
-
----
-
-### Q4: Redis连接超时
-
-**问题**: `RedisConnectionException: Unable to connect to Redis`
-
-**排查步骤**:
-1. 检查Redis是否启动：`redis-cli ping`
-2. 检查防火墙规则
-3. 检查Redis配置中的bind地址
-4. 如果Redis设置了密码，确保配置中填写了密码
-
----
-
-### Q5: JWT Token验证失败
-
-**问题**: `401 Unauthorized`
-
-**可能原因**:
-1. Token过期
-2. Token格式错误（缺少"Bearer "前缀）
-3. JWT密钥配置错误
-4. Token在黑名单中
-
-**解决方案**:
-```bash
-# 正确的请求头格式
-Authorization: Bearer eyJhbGciOiJIUzI1NiJ9...
-
-# 检查Token是否过期
-curl http://localhost:8080/auth/info \
-  -H "Authorization: Bearer {your_token}"
-```
-
----
-
-### Q6: 限流触发后如何处理
-
-**问题**: 收到429状态码
-
-**原因**: 请求频率超过配置的QPS限制
-
-**解决方案**:
-1. 检查是否是正常业务需求，考虑调整限流配置
-2. 实现客户端退避重试机制
-3. 对于高频接口，考虑使用缓存
-
----
-
-### Q7: 熔断器打开后一直无法恢复
-
-**问题**: 服务持续返回503
-
-**排查步骤**:
-1. 检查下游服务是否已恢复
-2. 查看熔断器配置中的`waitDurationInOpenState`（默认30秒）
-3. 手动重置熔断器状态（如果提供了管理接口）
-
----
-
-### Q8: 如何查看当前所有路由配置
-
-**方法1**: 调用管理接口
-
-```bash
-curl -X GET http://localhost:8080/gateway/routes/list \
-  -H "Authorization: Bearer {token}"
-```
-
-**方法2**: 使用Actuator端点（需启用）
-
-```bash
-curl http://localhost:8080/actuator/gateway/routes
-```
-
----
-
-### Q9: 如何在生产环境中管理JWT密钥
-
-**推荐方案**:
-
-1. **环境变量**（推荐）:
-```bash
-export JWT_SECRET="your-secret-key"
-```
-
-2. **配置中心**:
-使用Nacos、Apollo等配置中心
-
-3. **密钥管理服务**:
-AWS KMS、Azure Key Vault、HashiCorp Vault
-
----
-
-### Q10: 应用启动慢怎么优化
-
-**优化建议**:
-
-1. **懒加载Bean**:
-```java
-@Lazy
-@Bean
-public SomeBean someBean() {
-    return new SomeBean();
+{
+  "startTime": "2026-01-01 00:00:00",
+  "endTime":   "2027-01-01 00:00:00"
 }
 ```
 
-2. **异步初始化**:
-```java
-@Async
-@EventListener(ApplicationReadyEvent.class)
-public void init() {
-    // 初始化逻辑
-}
-```
+---
 
-3. **减少自动配置**:
-```java
-@SpringBootApplication(exclude = {
-    DataSourceAutoConfiguration.class
-})
-```
+### Q7：Sentinel 熔断后一直不恢复
+
+**原因**：`timeWindow`（熔断持续时间）配置过长，或下游服务仍不健康。
+
+**查看**：Sentinel Dashboard → 熔断降级 → 查看对应资源状态（CLOSED / OPEN / HALF_OPEN）。
+
+**手动重置**：重启网关实例可清除内存中的熔断状态（Nacos 数据源中的规则依然保留）。
 
 ---
 
-## 📚 参考资料
+### Q8：下游服务无法验证 X-Gateway-Signature
 
-- [Spring Cloud Gateway官方文档](https://spring.io/projects/spring-cloud-gateway)
-- [Spring Security官方文档](https://spring.io/projects/spring-security)
-- [R2DBC官方文档](https://r2dbc.io/)
-- [Resilience4j官方文档](https://resilience4j.readme.io/)
-- [JWT.io](https://jwt.io/)
+**排查步骤**：
+1. 确认下游服务 `GATEWAY_DOWNSTREAM_SECRET` 与网关一致
+2. 确认服务器时间差在 30s 内（`X-Gateway-Timestamp` 有效期 30s）
+3. 确认签名 payload 构造：`timestamp={ts}&userId={uid}&path={exactPath}`
+4. 路径需完全匹配，含查询参数的路径不包含 `?` 之后的部分
 
 ---
 
 ## 📝 更新日志
 
-### v1.0.0 (2025-11-24)
+### v2.0.0（2026-04-26）— 生产就绪版本
 
-- ✅ 实现JWT认证与授权
-- ✅ 实现RBAC权限控制
-- ✅ 实现接口限流
-- ✅ 实现熔断降级
-- ✅ 实现请求重试
-- ✅ 实现响应缓存
-- ✅ 实现IP黑白名单
-- ✅ 实现参数签名验证
-- ✅ 实现动态路由配置
-- ✅ 实现请求日志记录
-- ✅ 实现健康检查
-- ✅ 集成Swagger文档
+**新增**
+
+- ✅ Spring Boot 升级至 **4.0.5**，Spring Cloud 升级至 **2025.1.0**
+- ✅ **Nacos 服务发现**：网关自动注册，支持 `lb://service-name` 路由
+- ✅ **Nacos 配置中心**：`optional:nacos:` 热更新，不可用时优雅降级
+- ✅ **Sentinel 熔断降级**：替换 Resilience4j，v6x Gateway 适配器，规则持久化 Nacos
+- ✅ **OpenTelemetry 链路追踪**：`spring-boot-starter-opentelemetry`，traceparent 注入下游
+- ✅ **HMAC 下游信任签名**：`X-Gateway-Signature` + `X-Gateway-Timestamp`，防绕过攻击
+- ✅ **Security Headers 过滤器**：HSTS / CSP / X-Frame-Options / 防 MIME 嗅探
+- ✅ **HTTPS 支持**：`SSL_ENABLED=true` 启用，内置证书生成脚本
+- ✅ **HA docker-compose**：Nginx + gateway×N + Jaeger + Prometheus + Grafana
+- ✅ **K8s 生产清单**：Deployment / Service / HPA / ConfigMap / Secret（含健康探针）
+- ✅ **JWT jti 唯一标识**：防止同秒生成相同 Token 的哈希碰撞
+- ✅ **权限缓存 Redis Set**：替换 List，去重且无 `__EMPTY__` 占位符
+- ✅ **Redis Pub/Sub 路由缓存同步**：多实例路由变更即时同步
+- ✅ **XFF 可信代理防伪造**：只信任配置的代理 IP 的 X-Forwarded-For
+
+**修复**
+
+- ✅ JWT 同秒生成哈希碰撞导致合法 Token 被黑名单误判
+- ✅ `getTokenInfo` 登出后返回 code=500 而非 401
+- ✅ `@Idempotent` 在 WebFlux 环境下 HEADER 模式失效
+- ✅ 路由更新 NOT NULL 字段被覆盖为 null
+- ✅ 审计日志清理 0 行时空响应
+
+**移除**
+
+- ❌ Resilience4j（由 Sentinel 替代）
+
+---
+
+### v1.0.0（2025-11-24）— 初始版本
+
+- ✅ JWT 双 Token 认证
+- ✅ RBAC 权限控制
+- ✅ IP 黑白名单
+- ✅ Lua Token Bucket 限流
+- ✅ 数据库动态路由
+- ✅ 审计日志
+- ✅ 请求日志
+- ✅ 幂等性保护
+- ✅ 灰度发布
+- ✅ Prometheus 监控
+- ✅ Swagger 文档
+
+---
+
+## 📚 参考资料
+
+- [Spring Cloud Gateway 文档](https://docs.spring.io/spring-cloud-gateway/reference/)
+- [Spring Cloud Alibaba 文档](https://sca.aliyun.com/docs/2023/overview/what-is-sca/)
+- [Sentinel 文档](https://sentinelguard.io/zh-cn/docs/introduction.html)
+- [OpenTelemetry Java 文档](https://opentelemetry.io/docs/instrumentation/java/)
+- [Nacos 文档](https://nacos.io/zh-cn/docs/v2/what-is-nacos.html)
+- [Spring Boot Actuator](https://docs.spring.io/spring-boot/reference/actuator/)
 
 ---
 
@@ -1695,35 +1357,7 @@ public void init() {
 
 **SAPiece Team**
 
-- GitHub: [@sapiece](https://github.com/leileiya1)
-- Email: zhouleileisapiece@gmail.com  17685219818@163.com
-
----
-
-## 🤝 贡献指南
-
-欢迎提交Issue和Pull Request！
-
-### 贡献流程
-
-1. Fork本仓库
-2. 创建特性分支 (`git checkout -b feature/AmazingFeature`)
-3. 提交更改 (`git commit -m 'Add some AmazingFeature'`)
-4. 推送到分支 (`git push origin feature/AmazingFeature`)
-5. 提交Pull Request
-
-### 代码规范
-
-- 遵循阿里巴巴Java开发手册
-- 使用Lombok简化代码
-- 添加必要的注释和JavaDoc
-- 单元测试覆盖率 > 70%
-
----
-
-## 🌟 Star History
-
-如果这个项目对你有帮助，请给一个⭐️Star支持一下！
+- Email：zhouleileisapiece@gmail.com
 
 ---
 

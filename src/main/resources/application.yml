@@ -3,15 +3,15 @@ spring:
   application:
     name: sapiece-gateway  # 应用名称
 
-  # 排除与 Spring MVC/JPA 相关的 Spring Cloud 自动配置（本项目仅使用 WebFlux + R2DBC）
-  # spring-cloud-context 4.3.0 中这些配置引用了 Boot 4 WebFlux 项目里不存在的 MVC/JPA 类
+  # 排除 WebFlux 项目中不兼容的 MVC 相关自动配置
   autoconfigure:
     exclude:
       - org.springframework.cloud.autoconfigure.LifecycleMvcEndpointAutoConfiguration
-      - org.springframework.cloud.autoconfigure.RefreshAutoConfiguration
-      - org.springframework.cloud.autoconfigure.RefreshEndpointAutoConfiguration
       - org.springframework.cloud.autoconfigure.WritableEnvironmentEndpointAutoConfiguration
-      - org.springframework.cloud.autoconfigure.ConfigurationPropertiesRebinderAutoConfiguration
+
+  # Nacos 配置中心（optional: 前缀表示 Nacos 不可用时仍正常启动）
+  config:
+    import: "optional:nacos:${spring.application.name}.yaml"
 
   # 优雅停机配置
   lifecycle:
@@ -21,9 +21,9 @@ spring:
   # 生产环境：请通过环境变量注入凭据，例如：
   #   password: ${DB_PASSWORD}
   r2dbc:
-    url: r2dbc:mysql://localhost:3306/product_test?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai
-    username: root
-    password: SAPiece@zll9
+    url: r2dbc:mysql://10.70.239.17:3306/product_test?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai
+    username: sapiece
+    password: 159357
     pool:
       initial-size: 10        # 初始连接池大小
       max-size: 50           # 最大连接池大小
@@ -44,8 +44,61 @@ spring:
           min-idle: 5        # 最小空闲连接数
           max-wait: 3000ms   # 最大等待时间
 
-  # Spring Cloud Gateway 配置
+  # Spring Cloud Alibaba — Nacos
   cloud:
+    nacos:
+      # 服务注册发现
+      discovery:
+        server-addr: 10.70.239.17:8848
+        username: nacos
+        password: nacos
+        namespace: public          # 命名空间，默认 public
+        group: DEFAULT_GROUP
+        register-enabled: true     # 网关本身也注册到 Nacos，供其他服务发现
+        heart-beat-interval: 5000
+        heart-beat-timeout: 15000
+        ip: 127.0.0.1              # 显式指定注册 IP，避免 macOS 下 hostname 解析超时
+      # 配置中心
+      config:
+        server-addr: 10.70.239.17:8848
+        username: nacos
+        password: nacos
+        namespace: public
+        group: DEFAULT_GROUP
+        file-extension: yaml
+        refresh-enabled: true      # 开启动态刷新（需要 @RefreshScope）
+
+    # Sentinel 熔断降级
+    sentinel:
+      transport:
+        dashboard: localhost:8080   # Sentinel Dashboard 地址（部署后修改）
+        port: 8719                  # Sentinel 与 Dashboard 通信端口
+      eager: true                   # 应用启动时即连接 Dashboard
+      web-context-unify: false      # Gateway 场景需关闭 Web 上下文统一
+      # Nacos 持久化规则数据源
+      datasource:
+        degrade:
+          nacos:
+            server-addr: 10.70.239.17:8848
+            username: nacos
+            password: nacos
+            namespace: public
+            group-id: SENTINEL_GROUP
+            data-id: ${spring.application.name}-degrade-rules
+            data-type: json
+            rule-type: degrade
+        flow:
+          nacos:
+            server-addr: 10.70.239.17:8848
+            username: nacos
+            password: nacos
+            namespace: public
+            group-id: SENTINEL_GROUP
+            data-id: ${spring.application.name}-flow-rules
+            data-type: json
+            rule-type: flow
+
+    # Spring Cloud Gateway 配置
     gateway:
       # WebFlux 服务器配置 (Spring Cloud Gateway 2025.x 新结构)
       server:
@@ -115,6 +168,12 @@ rate-limit:
     default-capacity: 100             # 用户级别默认容量
     # 具体角色配置在 UserBasedRateLimitStrategy 中
 
+# 可信代理IP配置（只有来自这些IP的请求才信任X-Forwarded-For头）
+# 生产环境填写你的Nginx/LB内网IP，空列表=不信任XFF（直接用RemoteAddress）
+trusted-proxies:
+  - 127.0.0.1
+  - 0:0:0:0:0:0:0:1   # IPv6 loopback（本机测试用）
+
 # IP黑白名单配置
 ip-filter:
   # IP黑名单配置
@@ -129,12 +188,19 @@ ip-filter:
     # - 192.168.1.0/24                        # 允许整个局域网
     # - 127.0.0.1                             # 允许本机访问
 
-# 参数签名验证配置
+# 参数签名验证配置（客户端 → 网关）
 signature:
   enabled: false                              # 是否启用签名验证
   secret: SAPiece-Signature-Secret-Key-2025  # 签名密钥（生产环境建议通过环境变量注入）
   algorithm: MD5                              # 签名算法（MD5、SHA256）
   timestamp-validity: 300                     # 时间戳有效期（秒），默认5分钟
+
+# 网关 → 下游服务 HMAC 签名配置（防止下游被绕过网关直接访问）
+gateway:
+  downstream-sign:
+    enabled: true
+    secret: ${GATEWAY_DOWNSTREAM_SECRET:SAPiece-Gateway-Downstream-HMAC-Secret-2026}
+    timestamp-validity-ms: 30000             # 时间戳有效期 30s（防重放）
 
 # 响应缓存配置
 response-cache:
@@ -164,12 +230,32 @@ oauth2:
   enabled: true                                # 是否启用OAuth2登录
   base-redirect-uri: http://localhost:8080/auth/oauth2/callback  # 回调地址基础路径
 
+# OTLP 导出配置（指向 Jaeger / 任意 OTLP 接收器）
+otel:
+  exporter:
+    otlp:
+      endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT:http://localhost:4317}  # Jaeger gRPC; docker-compose 中为 http://jaeger:4317
+      protocol: grpc
+  service:
+    name: ${spring.application.name}
+
 # 服务器配置
 server:
-  port: 8080             # 服务端口
+  port: 8080             # HTTP 端口（保留，供内网/开发使用）
   http2:
-    enabled: true        # 启用HTTP/2
+    enabled: true        # 启用 HTTP/2
   shutdown: graceful     # 启用优雅停机
+  # HTTPS 配置（生产环境必须启用）
+  # 自签证书生成：见 scripts/gen-keystore.sh
+  # 生产证书：替换为 Let's Encrypt / 企业 CA 颁发的证书
+  ssl:
+    enabled: ${SSL_ENABLED:false}                          # 通过环境变量启用；docker-compose/K8s 中设为 true
+    key-store: ${SSL_KEY_STORE:classpath:ssl/gateway.p12}  # PKCS12 证书路径
+    key-store-password: ${SSL_KEY_STORE_PASSWORD:changeit}
+    key-store-type: PKCS12
+    key-alias: gateway
+  # 同时监听 8443（HTTPS）- 需要 WebServerFactoryCustomizer
+  # 见 config/HttpsConfig.java
 
 # 日志配置
 logging:
@@ -189,7 +275,7 @@ logging:
       max-file-size: 10MB
       max-history: 30
 
-# Actuator 监控配置
+# Actuator 监控 + 链路追踪配置
 management:
   endpoints:
     web:
@@ -202,6 +288,11 @@ management:
     export:
       prometheus:
         enabled: true
+  # OpenTelemetry 链路追踪
+  tracing:
+    enabled: true
+    sampling:
+      probability: 1.0    # 开发环境全采样；生产建议 0.1~0.2
 
 # 应用信息
 info:

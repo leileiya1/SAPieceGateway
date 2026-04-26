@@ -85,10 +85,6 @@ public class CircuitBreakerFilter implements GlobalFilter, Ordered {
             // 超时异常
             log.warn("服务调用超时, path: {}", exchange.getRequest().getPath().value());
             result = Result.error(ErrorCode.REQUEST_TIMEOUT);
-        } else if (throwable instanceof io.github.resilience4j.circuitbreaker.CallNotPermittedException) {
-            // 熔断器打开，拒绝调用
-            log.warn("熔断器已打开，拒绝调用, path: {}", exchange.getRequest().getPath().value());
-            result = Result.error(ErrorCode.CIRCUIT_BREAKER_OPEN);
         } else {
             // 其他异常
             log.error("服务调用异常, error: {}", throwable.getMessage());

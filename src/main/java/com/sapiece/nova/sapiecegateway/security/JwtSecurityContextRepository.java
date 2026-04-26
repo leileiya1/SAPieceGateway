@@ -1,6 +1,7 @@
 package com.sapiece.nova.sapiecegateway.security;
 
 import com.sapiece.nova.sapiecegateway.service.TokenBlacklistService;
+import com.sapiece.nova.sapiecegateway.service.UserPermissionCacheService;
 import com.sapiece.nova.sapiecegateway.util.JwtUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -15,6 +16,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
+
+import java.util.List;
 
 /**
  * JWT安全上下文仓储（重构版）
@@ -44,6 +47,7 @@ public class JwtSecurityContextRepository implements ServerSecurityContextReposi
     private final JwtUtil jwtUtil;
     private final CustomReactiveUserDetailsService userDetailsService;
     private final TokenBlacklistService tokenBlacklistService;
+    private final UserPermissionCacheService userPermissionCacheService;
 
     private static final String TOKEN_PREFIX = "Bearer ";
 
@@ -95,63 +99,59 @@ public class JwtSecurityContextRepository implements ServerSecurityContextReposi
 
     /**
      * 验证 Token 并创建 SecurityContext
+     * 热路径（Redis命中）：全程不查DB
+     * 冷路径（Redis未命中）：降级查DB
      */
     private Mono<SecurityContext> authenticateToken(String token, String path) {
         try {
-            // 1. 验证 Token 是否有效
             if (!jwtUtil.validateToken(token)) {
                 log.warn("【JWT认证】Token验证失败或已过期, path: {}", path);
                 return Mono.empty();
             }
-
-            // 2. 验证是否为 Access Token（双Token模式下，只有Access Token可用于API认证）
             if (!jwtUtil.isAccessToken(token)) {
                 log.warn("【JWT认证】提供的不是Access Token, path: {}", path);
                 return Mono.empty();
             }
 
-            // 3. 检查 Token 是否在黑名单中
+            Long userId = jwtUtil.getUserIdFromToken(token);
+            String userName = jwtUtil.getUserNameFromToken(token);
+            long tokenPwdVer = jwtUtil.getPwdVerFromToken(token);
+
             return tokenBlacklistService.isBlacklisted(token)
-                    .flatMap(isBlacklisted -> {
-                        if (isBlacklisted) {
+                    .flatMap(blacklisted -> {
+                        if (blacklisted) {
                             log.warn("【JWT认证】Token已在黑名单中, path: {}", path);
-                            return Mono.empty();
+                            return Mono.<SecurityContext>empty();
                         }
-
-                        // 4. 从 Token 中提取用户 ID
-                        Long userId = jwtUtil.getUserIdFromToken(token);
-
-                        // 5. 检查用户是否在黑名单中
-                        return tokenBlacklistService.isUserBlacklisted(userId)
-                                .flatMap(isUserBlacklisted -> {
-                                    if (isUserBlacklisted) {
-                                        log.warn("【JWT认证】用户已在黑名单中, userId: {}, path: {}", userId, path);
-                                        return Mono.empty();
+                        return tokenBlacklistService.isUserBlacklisted(userId);
+                    })
+                    .flatMap(userBlacklisted -> {
+                        if (Boolean.TRUE.equals(userBlacklisted)) {
+                            log.warn("【JWT认证】用户已在黑名单中, userId: {}, path: {}", userId, path);
+                            return Mono.<SecurityContext>empty();
+                        }
+                        // 从Redis取pwdVer，不查DB
+                        return userPermissionCacheService.getPwdVer(userId)
+                                .flatMap(redisPwdVer -> {
+                                    if (tokenPwdVer < redisPwdVer) {
+                                        log.warn("【JWT认证】Token在密码修改前签发已失效, userId: {}, tokenPwdVer: {}, redisPwdVer: {}",
+                                                userId, tokenPwdVer, redisPwdVer);
+                                        return Mono.<SecurityContext>empty();
                                     }
-
-                                    // 6. 加载用户详情
-                                    return userDetailsService.findByUserId(userId)
-                                            .flatMap(userDetails -> {
-                                                // 7. 检查 Token 是否在密码修改之前签发
-                                                if (userDetails instanceof CustomUserDetails customUserDetails) {
-                                                    if (jwtUtil.isTokenIssuedBeforePasswordChange(token,
-                                                            customUserDetails.getPasswordLastChangedAt())) {
-                                                        log.warn("【JWT认证】Token在密码修改前签发，已失效, userId: {}", userId);
-                                                        return Mono.empty();
-                                                    }
-                                                }
-
-                                                // 8. 创建认证对象
-                                                Authentication authentication = new UsernamePasswordAuthenticationToken(
-                                                        userDetails,
-                                                        null,
-                                                        userDetails.getAuthorities()
-                                                );
-
-                                                // 9. 创建并返回 SecurityContext
-                                                SecurityContext context = new SecurityContextImpl(authentication);
-                                                return Mono.just(context);
-                                            });
+                                    // 从Redis取权限，不查DB
+                                    return Mono.zip(
+                                            userPermissionCacheService.getUserRoles(userId),
+                                            userPermissionCacheService.getUserPermissions(userId)
+                                    ).flatMap(tuple -> {
+                                        List<String> roles = tuple.getT1();
+                                        List<String> permissions = tuple.getT2();
+                                        if (roles.isEmpty() && permissions.isEmpty()) {
+                                            // 缓存未命中，降级查DB
+                                            log.debug("【JWT认证】权限缓存未命中，降级查DB, userId: {}", userId);
+                                            return buildContextFromDb(userId, token, path);
+                                        }
+                                        return buildContextFromCache(userId, userName, roles, permissions, path);
+                                    });
                                 });
                     })
                     .onErrorResume(e -> {
@@ -163,6 +163,44 @@ public class JwtSecurityContextRepository implements ServerSecurityContextReposi
             log.error("【JWT认证】Token解析异常, path: {}, error: {}", path, e.getMessage());
             return Mono.empty();
         }
+    }
+
+    /** 热路径：从缓存数据直接构建SecurityContext，不查DB */
+    private Mono<SecurityContext> buildContextFromCache(Long userId, String userName,
+                                                        List<String> roles, List<String> permissions,
+                                                        String path) {
+        CustomUserDetails userDetails = new CustomUserDetails();
+        userDetails.setUserId(userId);
+        userDetails.setUsername(userName);
+        userDetails.setPassword("");
+        userDetails.setEnabled(true);
+        userDetails.setAccountNonExpired(true);
+        userDetails.setAccountNonLocked(true);
+        userDetails.setCredentialsNonExpired(true);
+        userDetails.setRoles(roles);
+        userDetails.setPermissions(permissions);
+
+        Authentication auth = new UsernamePasswordAuthenticationToken(
+                userDetails, null, userDetails.getAuthorities());
+        log.debug("【JWT认证】从缓存构建SecurityContext成功, userId: {}, path: {}", userId, path);
+        return Mono.just(new SecurityContextImpl(auth));
+    }
+
+    /** 冷路径：缓存未命中时降级查DB（含pwdVer校验） */
+    private Mono<SecurityContext> buildContextFromDb(Long userId, String token, String path) {
+        return userDetailsService.findByUserId(userId)
+                .flatMap(userDetails -> {
+                    if (userDetails instanceof CustomUserDetails cd) {
+                        if (jwtUtil.isTokenIssuedBeforePasswordChange(token, cd.getPasswordLastChangedAt())) {
+                            log.warn("【JWT认证】(DB降级)Token在密码修改前签发，已失效, userId: {}", userId);
+                            return Mono.<SecurityContext>empty();
+                        }
+                    }
+                    Authentication auth = new UsernamePasswordAuthenticationToken(
+                            userDetails, null, userDetails.getAuthorities());
+                    log.debug("【JWT认证】从DB构建SecurityContext成功, userId: {}, path: {}", userId, path);
+                    return Mono.just((SecurityContext) new SecurityContextImpl(auth));
+                });
     }
 
     /**

@@ -289,6 +289,7 @@ public class AuditLogServiceImpl implements AuditLogService {
         log.info("清理历史审计日志, beforeDays: {}", beforeDays);
         LocalDateTime beforeTime = LocalDateTime.now().minusDays(beforeDays);
         return auditLogRepository.deleteByOperateTimeBefore(beforeTime)
+                .defaultIfEmpty(0L)
                 .doOnSuccess(count -> log.info("清理历史审计日志完成, 删除记录数: {}", count));
     }
 

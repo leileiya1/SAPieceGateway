@@ -4,14 +4,19 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sapiece.nova.sapiecegateway.entity.SysGatewayRoute;
 import com.sapiece.nova.sapiecegateway.repository.SysGatewayRouteRepository;
+import com.sapiece.nova.sapiecegateway.route.impl.DynamicRouteServiceImpl;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.redis.core.ReactiveRedisTemplate;
+import org.springframework.data.redis.listener.ChannelTopic;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.stereotype.Service;
 import org.springframework.util.AntPathMatcher;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.util.retry.Retry;
 
 import java.time.Duration;
 import java.util.*;
@@ -33,11 +38,32 @@ public class RoutePermissionService {
 
     private final SysGatewayRouteRepository routeRepository;
     private final ObjectMapper objectMapper;
+    private final ReactiveRedisTemplate<String, String> reactiveRedisTemplate;
+    private final DatabaseRouteDefinitionRepository routeDefinitionRepository;
     private final AntPathMatcher pathMatcher = new AntPathMatcher();
     private final AtomicReference<List<RoutePredicateHolder>> routeCache =
             new AtomicReference<>(Collections.emptyList());
     private final AtomicLong lastRouteCacheRefresh = new AtomicLong(0L);
     private static final Duration ROUTE_CACHE_TTL = Duration.ofSeconds(30);
+
+    /** 启动时订阅路由变更频道，多实例部署时保持缓存一致 */
+    @PostConstruct
+    public void subscribeRouteChanges() {
+        reactiveRedisTemplate.listenToChannel(DynamicRouteServiceImpl.ROUTE_CHANGE_CHANNEL)
+                .doOnNext(msg -> {
+                    log.info("收到路由变更通知，清空本地路由权限缓存和路由定义缓存");
+                    routeCache.set(Collections.emptyList());
+                    lastRouteCacheRefresh.set(0L);
+                    routeDefinitionRepository.invalidateCache();
+                })
+                .retryWhen(Retry.backoff(Long.MAX_VALUE, Duration.ofSeconds(2))
+                        .maxBackoff(Duration.ofSeconds(30)))
+                .subscribe(
+                        msg -> { /* doOnNext已处理 */ },
+                        err -> log.error("路由变更订阅异常: {}", err.getMessage())
+                );
+        log.info("已订阅路由变更频道: {}", DynamicRouteServiceImpl.ROUTE_CHANGE_CHANNEL);
+    }
 
     /**
      * 根据请求路径和方法匹配路由配置
@@ -223,7 +249,7 @@ public class RoutePermissionService {
     private boolean isSuperAdmin(Authentication authentication) {
         return authentication.getAuthorities().stream()
                 .map(GrantedAuthority::getAuthority)
-                .anyMatch(auth -> "ROLE_SUPER_ADMIN".equals(auth) || "ROLE_ADMIN".equals(auth));
+                .anyMatch("ROLE_SUPER_ADMIN"::equals);
     }
 
     /**

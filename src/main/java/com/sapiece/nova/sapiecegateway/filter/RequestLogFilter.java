@@ -2,7 +2,9 @@ package com.sapiece.nova.sapiecegateway.filter;
 
 import cn.hutool.core.util.IdUtil;
 import com.sapiece.nova.sapiecegateway.common.FilterOrders;
+import com.sapiece.nova.sapiecegateway.util.IpUtil;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.Ordered;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.server.reactive.ServerHttpRequest;
@@ -16,6 +18,7 @@ import reactor.core.publisher.Mono;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 
 /**
  * 请求日志过滤器
@@ -38,6 +41,9 @@ public class RequestLogFilter implements WebFilter, Ordered {
      * 请求ID的Header名称
      */
     private static final String REQUEST_ID_HEADER = "X-Request-ID";
+
+    @Value("${trusted-proxies:}")
+    private List<String> trustedProxies;
 
     /**
      * 过滤器优先级（数值越小，优先级越高）
@@ -107,7 +113,7 @@ public class RequestLogFilter implements WebFilter, Ordered {
         String method = request.getMethod().name();
         String path = request.getPath().value();
         String query = request.getURI().getQuery();
-        String clientIp = getClientIp(request);
+        String clientIp = IpUtil.extractClientIp(request, trustedProxies);
         String userAgent = request.getHeaders().getFirst(HttpHeaders.USER_AGENT);
 
         // 构建日志信息
@@ -179,28 +185,5 @@ public class RequestLogFilter implements WebFilter, Ordered {
         }
     }
 
-    /**
-     * 获取客户端真实IP
-     *
-     * @param request HTTP请求
-     * @return 客户端IP
-     */
-    private String getClientIp(ServerHttpRequest request) {
-        // 尝试从X-Forwarded-For头获取
-        String xForwardedFor = request.getHeaders().getFirst("X-Forwarded-For");
-        if (xForwardedFor != null && !xForwardedFor.isEmpty()) {
-            return xForwardedFor.split(",")[0].trim();
-        }
-
-        // 尝试从X-Real-IP头获取
-        String xRealIp = request.getHeaders().getFirst("X-Real-IP");
-        if (xRealIp != null && !xRealIp.isEmpty()) {
-            return xRealIp;
-        }
-
-        // 直接从RemoteAddress获取
-        return request.getRemoteAddress() != null
-                ? request.getRemoteAddress().getAddress().getHostAddress()
-                : "unknown";
-    }
+    // IP提取已统一到 IpUtil.extractClientIp(request, trustedProxies)
 }

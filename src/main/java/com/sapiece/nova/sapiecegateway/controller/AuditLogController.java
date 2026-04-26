@@ -29,7 +29,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/admin/audit-log")
 @RequiredArgsConstructor
-@PreAuthorize("hasRole('ADMIN')")
+@PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
 @Tag(name = "审计日志管理", description = "提供审计日志查询、统计和清理功能")
 public class AuditLogController {
 

@@ -1,0 +1,37 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: sapiece-gateway
+    env: production
+
+scrape_configs:
+  # ── Gateway 实例（docker-compose DNS 发现） ──────────────────────────
+  - job_name: sapiece-gateway
+    metrics_path: /actuator/prometheus
+    scrape_interval: 10s
+    dns_sd_configs:
+      - names:
+          - tasks.gateway   # docker swarm 或 compose 的 DNS 服务发现
+        type: A
+        port: 8080
+    # 固定实例备用（当 DNS 发现不可用时）
+    static_configs:
+      - targets:
+          - gateway:8080
+        labels:
+          instance: gateway-1
+
+  # ── Nginx 指标（需要 nginx-prometheus-exporter sidecar） ────────────
+  # 取消注释以启用
+  # - job_name: nginx
+  #   static_configs:
+  #     - targets:
+  #         - nginx-exporter:9113
+
+  # ── JVM 进程指标（通过 Actuator/Micrometer 已包含） ──────────────────
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []   # 配置 Alertmanager 地址（如有）

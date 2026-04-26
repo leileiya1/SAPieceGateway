@@ -1,5 +1,6 @@
 package com.sapiece.nova.sapiecegateway.util;
 
+import cn.hutool.core.util.IdUtil;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
@@ -85,21 +86,24 @@ public class JwtUtil {
 
     /**
      * 生成Access Token（短期有效，用于API访问）
-     * 精简版：JWT只存储userId和userName，权限信息存储在Redis中
+     * 包含pwdVer（密码版本号），用于无DB校验Token是否在密码修改前签发
      *
      * @param userId   用户ID
      * @param userName 用户名
+     * @param pwdVer   密码版本号（passwordLastChangedAt epoch second，未改过密码传0）
      * @return Access Token
      */
-    public String generateAccessToken(Long userId, String userName) {
+    public String generateAccessToken(Long userId, String userName, long pwdVer) {
         log.debug("生成Access Token, userId: {}, userName: {}", userId, userName);
         try {
             Date now = new Date();
             Date expiryDate = new Date(now.getTime() + accessTokenExpiration);
 
             String token = Jwts.builder()
+                    .id(IdUtil.simpleUUID())
                     .subject(userName)
                     .claim("userId", userId)
+                    .claim("pwdVer", pwdVer)
                     .claim(CLAIM_TOKEN_TYPE, TOKEN_TYPE_ACCESS)
                     .issuedAt(now)
                     .expiration(expiryDate)
@@ -112,6 +116,11 @@ public class JwtUtil {
             log.error("生成Access Token失败, userId: {}, userName: {}, error: {}", userId, userName, e.getMessage());
             throw new RuntimeException("生成Access Token失败", e);
         }
+    }
+
+    /** 兼容旧调用，pwdVer默认0 */
+    public String generateAccessToken(Long userId, String userName) {
+        return generateAccessToken(userId, userName, 0L);
     }
 
     /**
@@ -128,6 +137,7 @@ public class JwtUtil {
             Date expiryDate = new Date(now.getTime() + refreshTokenExpiration);
 
             String token = Jwts.builder()
+                    .id(IdUtil.simpleUUID())
                     .subject(userName)
                     .claim("userId", userId)
                     .claim("userName", userName)
@@ -147,20 +157,38 @@ public class JwtUtil {
 
     /**
      * 生成双Token（Access Token + Refresh Token）
-     * 精简版：不再传入roles和permissions
      *
      * @param userId   用户ID
      * @param userName 用户名
-     * @return 包含accessToken和refreshToken的Map
+     * @param pwdVer   密码版本号
      */
-    public Map<String, String> generateTokenPair(Long userId, String userName) {
+    public Map<String, String> generateTokenPair(Long userId, String userName, long pwdVer) {
         log.debug("生成双Token, userId: {}, userName: {}", userId, userName);
-        String accessToken = generateAccessToken(userId, userName);
+        String accessToken = generateAccessToken(userId, userName, pwdVer);
         String refreshToken = generateRefreshToken(userId, userName);
         return Map.of(
                 "accessToken", accessToken,
                 "refreshToken", refreshToken
         );
+    }
+
+    /** 兼容旧调用 */
+    public Map<String, String> generateTokenPair(Long userId, String userName) {
+        return generateTokenPair(userId, userName, 0L);
+    }
+
+    /**
+     * 从Token中提取pwdVer，Token未包含该字段时返回0
+     */
+    public long getPwdVerFromToken(String token) {
+        try {
+            Claims claims = parseToken(token);
+            Object pwdVer = claims.get("pwdVer");
+            if (pwdVer instanceof Number n) return n.longValue();
+            return 0L;
+        } catch (Exception e) {
+            return 0L;
+        }
     }
 
     /**

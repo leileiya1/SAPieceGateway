@@ -1,0 +1,39 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: sapiece-gateway-config
+  namespace: sapiece
+  labels:
+    app: sapiece-gateway
+data:
+  # 非敏感配置（敏感信息用 Secret）
+  SPRING_PROFILES_ACTIVE: "prod"
+  SPRING_APPLICATION_NAME: "sapiece-gateway"
+  SERVER_PORT: "8080"
+  # Nacos
+  SPRING_CLOUD_NACOS_DISCOVERY_SERVER_ADDR: "nacos-service:8848"
+  SPRING_CLOUD_NACOS_DISCOVERY_USERNAME: "nacos"
+  SPRING_CLOUD_NACOS_CONFIG_SERVER_ADDR: "nacos-service:8848"
+  # OTel → Jaeger
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger-service:4317"
+  OTEL_SERVICE_NAME: "sapiece-gateway"
+  # Sentinel Dashboard
+  SPRING_CLOUD_SENTINEL_TRANSPORT_DASHBOARD: "sentinel-dashboard:8080"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: sapiece-gateway-secret
+  namespace: sapiece
+  labels:
+    app: sapiece-gateway
+type: Opaque
+stringData:
+  DB_URL: "r2dbc:mysql://mysql-service:3306/product_test?useSSL=false&serverTimezone=Asia/Shanghai"
+  DB_USERNAME: "sapiece"
+  DB_PASSWORD: "159357"               # 生产环境替换
+  REDIS_HOST: "redis-service"
+  JWT_SECRET: "SAPiece-Gateway-Secret-Key-Change-In-Production"
+  GATEWAY_DOWNSTREAM_SECRET: "change-me-in-production"
+  NACOS_PASSWORD: "nacos"
+  SSL_KEY_STORE_PASSWORD: "changeit"  # 生产环境替换

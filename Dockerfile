@@ -32,7 +32,11 @@ RUN mkdir -p logs && chown -R sapiece:sapiece /app
 
 USER sapiece
 
-EXPOSE 8080
+EXPOSE 8080 8443
+
+# 容器健康检查（K8s readiness/liveness probe 的备用方案）
+HEALTHCHECK --interval=15s --timeout=5s --start-period=40s --retries=3 \
+  CMD wget -qO- http://localhost:8080/actuator/health || exit 1
 
 # JVM 参数说明：
 #   -XX:+UseZGC                  ZGC 低停顿 GC，适合响应式服务

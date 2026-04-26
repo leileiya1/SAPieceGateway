@@ -3,7 +3,7 @@ package com.sapiece.nova.sapiecegateway.aspect;
 import cn.hutool.crypto.digest.DigestUtil;
 import cn.hutool.json.JSONUtil;
 import com.sapiece.nova.sapiecegateway.annotation.Idempotent;
-import com.sapiece.nova.sapiecegateway.exception.BusinessException;
+import com.sapiece.nova.sapiecegateway.common.Result;
 import com.sapiece.nova.sapiecegateway.service.IdempotentService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -12,7 +12,9 @@ import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.annotation.Pointcut;
 import org.aspectj.lang.reflect.MethodSignature;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
@@ -51,54 +53,65 @@ public class IdempotentAspect {
      */
     @Around("idempotentPointcut()")
     public Object around(ProceedingJoinPoint joinPoint) throws Throwable {
-        // 获取方法签名
         MethodSignature signature = (MethodSignature) joinPoint.getSignature();
         Method method = signature.getMethod();
-
-        // 获取@Idempotent注解
         Idempotent idempotent = method.getAnnotation(Idempotent.class);
         if (idempotent == null) {
-            log.warn("未找到@Idempotent注解");
             return joinPoint.proceed();
         }
 
-        // 生成幂等性键
-        String idempotentKey = generateIdempotentKey(joinPoint, idempotent);
-        log.debug("生成幂等性键: {}", idempotentKey);
-
-        // 计算有效期
         Duration duration = Duration.ofMillis(idempotent.timeUnit().toMillis(idempotent.timeout()));
 
-        // 进行幂等性校验
+        if (idempotent.keySource() == Idempotent.KeySource.HEADER) {
+            // WebFlux环境：从Reactor Context取ServerWebExchange读请求头
+            // Spring Security的ReactorContextWebFilter会将exchange放入Context
+            String prefix = idempotent.prefix().isEmpty()
+                    ? joinPoint.getSignature().getDeclaringTypeName() + "." + joinPoint.getSignature().getName()
+                    : idempotent.prefix();
+            String keyField = idempotent.keyField();
+
+            return Mono.deferContextual(ctx -> {
+                String headerValue = null;
+                try {
+                    ServerWebExchange exchange = ctx.get(ServerWebExchange.class);
+                    headerValue = exchange.getRequest().getHeaders().getFirst(keyField);
+                } catch (Exception ignored) {
+                    // exchange不在context中，降级为auto key
+                }
+                String key = prefix + ":" + (headerValue != null ? headerValue : generateAutoKey(joinPoint));
+                log.debug("幂等性HEADER键: {}", key);
+                return performCheck(key, duration, idempotent, joinPoint);
+            });
+        } else {
+            String key = generateIdempotentKey(joinPoint, idempotent);
+            return performCheck(key, duration, idempotent, joinPoint);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Mono<Object> performCheck(String idempotentKey, Duration duration,
+                                       Idempotent idempotent, ProceedingJoinPoint joinPoint) {
         return idempotentService.validateAndConsumeToken(idempotentKey, duration)
                 .flatMap(valid -> {
-                    if (valid) {
-                        // 幂等性校验通过，执行目标方法
-                        log.info("幂等性校验通过, key: {}", idempotentKey);
-                        try {
-                            Object result = joinPoint.proceed();
-                            if (result instanceof Mono) {
-                                return ((Mono<?>) result)
-                                        .doOnSuccess(r -> log.debug("幂等性操作执行成功, key: {}", idempotentKey))
-                                        .doOnError(error -> {
-                                            // 操作失败，删除幂等性标记，允许重试
-                                            log.warn("幂等性操作执行失败，删除标记允许重试, key: {}, error: {}",
-                                                    idempotentKey, error.getMessage());
-                                            idempotentService.deleteToken(idempotentKey).subscribe();
-                                        });
-                            }
-                            return Mono.just(result);
-                        } catch (Throwable e) {
-                            log.error("执行目标方法异常, key: {}, error: {}", idempotentKey, e.getMessage());
-                            // 操作失败，删除幂等性标记，允许重试
-                            idempotentService.deleteToken(idempotentKey).subscribe();
-                            return Mono.error(e);
-                        }
-                    } else {
-                        // 幂等性校验失败，拒绝重复请求
+                    if (!valid) {
                         log.warn("幂等性校验失败，拒绝重复请求, key: {}", idempotentKey);
-                        String message = idempotent.message();
-                        return Mono.error(new BusinessException(409, message));
+                        // 返回标准Result结构而非抛异常，避免WebFlux AOP错误传播问题
+                        return Mono.just((Object) Result.error(429, idempotent.message()));
+                    }
+                    log.info("幂等性校验通过, key: {}", idempotentKey);
+                    try {
+                        Object result = joinPoint.proceed();
+                        if (result instanceof Mono<?> mono) {
+                            return mono.cast(Object.class)
+                                    .doOnError(err -> {
+                                        log.warn("幂等性操作失败，删除标记允许重试, key: {}", idempotentKey);
+                                        idempotentService.deleteToken(idempotentKey).subscribe();
+                                    });
+                        }
+                        return Mono.just(result);
+                    } catch (Throwable e) {
+                        idempotentService.deleteToken(idempotentKey).subscribe();
+                        return Mono.error(e);
                     }
                 });
     }
@@ -134,26 +147,14 @@ public class IdempotentAspect {
         return prefix + ":" + key;
     }
 
-    /**
-     * 从请求头获取幂等性键
-     *
-     * @param joinPoint 连接点
-     * @param keyField  字段名
-     * @return 幂等性键
-     */
+    /** HEADER模式降级：从方法args里找ServerWebExchange（兼容老写法） */
     private String getKeyFromHeader(ProceedingJoinPoint joinPoint, String keyField) {
-        Object[] args = joinPoint.getArgs();
-        for (Object arg : args) {
+        for (Object arg : joinPoint.getArgs()) {
             if (arg instanceof ServerWebExchange exchange) {
-                String headerValue = exchange.getRequest().getHeaders().getFirst(keyField);
-                if (headerValue != null && !headerValue.isEmpty()) {
-                    log.debug("从请求头获取幂等性键, header: {}, value: {}", keyField, headerValue);
-                    return headerValue;
-                }
+                String v = exchange.getRequest().getHeaders().getFirst(keyField);
+                if (v != null && !v.isEmpty()) return v;
             }
         }
-
-        log.warn("未从请求头找到幂等性键, header: {}, 使用自动生成", keyField);
         return generateAutoKey(joinPoint);
     }
 

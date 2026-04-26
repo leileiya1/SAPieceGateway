@@ -26,7 +26,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/admin/gray")
 @RequiredArgsConstructor
-@PreAuthorize("hasRole('ADMIN')")
+@PreAuthorize("hasAnyRole('ADMIN', 'SUPER_ADMIN')")
 @Tag(name = "灰度发布管理", description = "灰度规则的增删改查接口")
 public class GrayRuleController {
 

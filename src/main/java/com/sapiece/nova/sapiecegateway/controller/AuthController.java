@@ -1,6 +1,7 @@
 package com.sapiece.nova.sapiecegateway.controller;
 
 import com.sapiece.nova.sapiecegateway.common.Result;
+import com.sapiece.nova.sapiecegateway.exception.BusinessException;
 import com.sapiece.nova.sapiecegateway.service.AuthService;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
@@ -9,6 +10,9 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.server.reactive.ServerHttpRequest;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 
@@ -39,14 +43,17 @@ public class AuthController {
      */
     @Operation(summary = "用户登录", description = "使用用户名和密码登录获取Token")
     @PostMapping("/login")
-    public Mono<Result<Map<String, Object>>> login(@RequestBody LoginRequest loginRequest) {
-        log.info("用户登录请求, userName: {}", loginRequest.getUserName());
+    public Mono<Result<Map<String, Object>>> login(@RequestBody LoginRequest loginRequest,
+                                                   ServerHttpRequest request) {
+        String clientIp = extractClientIp(request);
+        String userAgent = request.getHeaders().getFirst(HttpHeaders.USER_AGENT);
+        log.info("用户登录请求, userName: {}, ip: {}", loginRequest.getUserName(), clientIp);
 
-        return authService.login(loginRequest.getUserName(), loginRequest.getPassword())
+        return authService.login(loginRequest.getUserName(), loginRequest.getPassword(), clientIp, userAgent)
                 .map(data -> Result.success("登录成功", data))
                 .onErrorResume(e -> {
                     log.error("用户登录失败, userName: {}, error: {}", loginRequest.getUserName(), e.getMessage());
-                    return Mono.just(Result.error(e.getMessage()));
+                    return Mono.just(toErrorResult(e));
                 });
     }
 
@@ -60,10 +67,13 @@ public class AuthController {
     @Operation(summary = "用户登出", description = "将当前Token加入黑名单，使其失效")
     @Parameter(name = "Authorization", description = "JWT Token", required = true, example = "Bearer eyJhbGciOiJIUzI1NiJ9...")
     @PostMapping("/logout")
-    public Mono<Result<Map<String, Object>>> logout(@RequestHeader("Authorization") String token) {
-        log.info("用户登出请求");
+    public Mono<Result<Map<String, Object>>> logout(@RequestHeader("Authorization") String token,
+                                                    ServerHttpRequest request) {
+        String clientIp = extractClientIp(request);
+        String userAgent = request.getHeaders().getFirst(HttpHeaders.USER_AGENT);
+        log.info("用户登出请求, ip: {}", clientIp);
 
-        return authService.logout(token)
+        return authService.logout(token, clientIp, userAgent)
                 .map(success -> {
                     Map<String, Object> resultData = new HashMap<>();
                     resultData.put("success", success);
@@ -73,8 +83,23 @@ public class AuthController {
                 })
                 .onErrorResume(e -> {
                     log.error("用户登出失败, error: {}", e.getMessage());
-                    return Mono.just(Result.error(e.getMessage()));
+                    return Mono.just(toErrorResult(e));
                 });
+    }
+
+    /** 提取客户端真实IP，信任前置代理的X-Forwarded-For */
+    private String extractClientIp(ServerHttpRequest request) {
+        String xff = request.getHeaders().getFirst("X-Forwarded-For");
+        if (StringUtils.hasText(xff) && !"unknown".equalsIgnoreCase(xff)) {
+            return xff.split(",")[0].trim();
+        }
+        String xri = request.getHeaders().getFirst("X-Real-IP");
+        if (StringUtils.hasText(xri) && !"unknown".equalsIgnoreCase(xri)) {
+            return xri.trim();
+        }
+        return request.getRemoteAddress() != null
+                ? request.getRemoteAddress().getAddress().getHostAddress()
+                : "unknown";
     }
 
     /**
@@ -97,7 +122,7 @@ public class AuthController {
                 })
                 .onErrorResume(e -> {
                     log.error("Token刷新失败, error: {}", e.getMessage());
-                    return Mono.just(Result.error(e.getMessage()));
+                    return Mono.just(toErrorResult(e));
                 });
     }
 
@@ -116,7 +141,7 @@ public class AuthController {
                 .map(tokenData -> Result.success("Token刷新成功", tokenData))
                 .onErrorResume(e -> {
                     log.error("Access Token刷新失败, error: {}", e.getMessage());
-                    return Mono.just(Result.error(e.getMessage()));
+                    return Mono.just(toErrorResult(e));
                 });
     }
 
@@ -136,8 +161,15 @@ public class AuthController {
                 .map(tokenInfo -> Result.success("获取用户信息成功", tokenInfo))
                 .onErrorResume(e -> {
                     log.error("获取用户信息失败, error: {}", e.getMessage());
-                    return Mono.just(Result.error(e.getMessage()));
+                    return Mono.just(toErrorResult(e));
                 });
+    }
+
+    private static <T> Result<T> toErrorResult(Throwable e) {
+        if (e instanceof BusinessException be) {
+            return Result.error(be.getCode(), be.getMessage());
+        }
+        return Result.error(e.getMessage());
     }
 
     /**

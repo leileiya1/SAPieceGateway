@@ -1,6 +1,7 @@
 package com.sapiece.nova.sapiecegateway.filter;
 
 import com.sapiece.nova.sapiecegateway.common.FilterOrders;
+import com.sapiece.nova.sapiecegateway.util.IpUtil;
 import com.sapiece.nova.sapiecegateway.util.ResponseUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -54,6 +55,9 @@ public class IpBlackWhiteListFilter implements WebFilter, Ordered {
     @Value("${ip-filter.whitelist-enabled:false}")
     private Boolean whitelistEnabled;
 
+    @Value("${trusted-proxies:}")
+    private List<String> trustedProxies;
+
     /**
      * 过滤器优先级（数值越小，优先级越高）
      * 确保在认证过滤器之前执行
@@ -74,7 +78,7 @@ public class IpBlackWhiteListFilter implements WebFilter, Ordered {
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
         ServerHttpRequest request = exchange.getRequest();
-        String clientIp = getClientIp(request);
+        String clientIp = IpUtil.extractClientIp(request, trustedProxies);
         String path = request.getPath().value();
 
         log.debug("IP黑白名单过滤器执行, clientIp: {}, path: {}", clientIp, path);
@@ -201,37 +205,7 @@ public class IpBlackWhiteListFilter implements WebFilter, Ordered {
         return result;
     }
 
-    /**
-     * 获取客户端真实IP
-     * 考虑代理和负载均衡的情况
-     *
-     * @param request HTTP请求
-     * @return 客户端IP
-     */
-    private String getClientIp(ServerHttpRequest request) {
-        // 尝试从X-Forwarded-For头获取（经过代理的情况）
-        String xForwardedFor = request.getHeaders().getFirst("X-Forwarded-For");
-        if (xForwardedFor != null && !xForwardedFor.isEmpty()) {
-            // X-Forwarded-For可能包含多个IP，取第一个
-            String ip = xForwardedFor.split(",")[0].trim();
-            log.debug("从X-Forwarded-For获取客户端IP: {}", ip);
-            return ip;
-        }
-
-        // 尝试从X-Real-IP头获取
-        String xRealIp = request.getHeaders().getFirst("X-Real-IP");
-        if (xRealIp != null && !xRealIp.isEmpty()) {
-            log.debug("从X-Real-IP获取客户端IP: {}", xRealIp);
-            return xRealIp;
-        }
-
-        // 直接从RemoteAddress获取
-        String remoteAddress = request.getRemoteAddress() != null
-                ? request.getRemoteAddress().getAddress().getHostAddress()
-                : "unknown";
-        log.debug("从RemoteAddress获取客户端IP: {}", remoteAddress);
-        return remoteAddress;
-    }
+    // IP提取已统一到 IpUtil.extractClientIp(request, trustedProxies)
 
     private Mono<Void> handleIpBlocked(ServerWebExchange exchange, String clientIp, String message) {
         log.debug("IP封禁响应, clientIp: {}", clientIp);
