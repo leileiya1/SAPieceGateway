@@ -99,7 +99,7 @@ public class EnhancedRateLimitFilter implements WebFilter, Ordered {
         Mono<Integer> qpsMono = strategy.getQpsLimit(exchange);
         Mono<Integer> capacityMono = strategy.getCapacity(exchange);
 
-        return Mono.zip(qpsMono, capacityMono)
+        Mono<Boolean> rateLimitDecision = Mono.zip(qpsMono, capacityMono)
                 .flatMap(tuple -> {
                     Integer qps = tuple.getT1();
                     Integer capacity = tuple.getT2();
@@ -110,26 +110,28 @@ public class EnhancedRateLimitFilter implements WebFilter, Ordered {
 
                     // 执行限流检查
                     return executeLuaScript(rateLimitKey, capacity, qps, timestamp)
-                            .flatMap(result -> {
+                            .map(result -> {
                                 if (result == 1) {
-                                    // 限流通过
                                     log.debug("限流检查通过, path: {}", path);
-                                    return chain.filter(exchange);
-                                } else {
-                                    // 触发限流
-                                    log.warn("触发限流限制, strategy: {}, path: {}, qps: {}",
-                                            strategy.getStrategyName(), path, qps);
-                                    // 记录限流指标
-                                    metricsService.recordRateLimitHit(path);
-                                    return handleRateLimitExceeded(exchange);
+                                    return true;
                                 }
+
+                                log.warn("触发限流限制, strategy: {}, path: {}, qps: {}",
+                                        strategy.getStrategyName(), path, qps);
+                                metricsService.recordRateLimitHit(path);
+                                return false;
                             });
                 })
                 .onErrorResume(error -> {
-                    // Redis异常时，放行请求（避免因Redis故障导致服务不可用）
                     log.error("限流检查异常, 放行请求, path: {}, error: {}", path, error.getMessage());
-                    return chain.filter(exchange);
+                    return Mono.just(true);
                 });
+
+        // The downstream chain must stay outside the limiter error handler. Otherwise a
+        // controller or route error would be mistaken for a Redis failure and the same
+        // request could be subscribed to a second time.
+        return rateLimitDecision.flatMap(allowed ->
+                allowed ? chain.filter(exchange) : handleRateLimitExceeded(exchange));
     }
 
     /**
@@ -161,7 +163,7 @@ public class EnhancedRateLimitFilter implements WebFilter, Ordered {
                 RATE_LIMIT_SCRIPT,
                 List.of(key),
                 List.of(String.valueOf(capacity), String.valueOf(qps), String.valueOf(timestamp))
-        ).next();
+        ).next().switchIfEmpty(Mono.error(new IllegalStateException("Redis限流脚本未返回结果")));
     }
 
     /**
