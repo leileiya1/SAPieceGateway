@@ -13,11 +13,11 @@ spec:
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      # With two nodes, surging a third Pod can leave both replacement Pods on
-      # the same node after the old replica terminates. Releasing one replica
-      # first lets the hard topology constraint keep one Gateway per node.
-      maxSurge: 0
-      maxUnavailable: 1
+      # Keep full capacity during upgrades. The soft spread constraint below
+      # still favors one Pod per node, but allows both replicas on the surviving
+      # node when a server is unavailable.
+      maxSurge: 1
+      maxUnavailable: 0
   template:
     metadata:
       labels:
@@ -36,7 +36,7 @@ spec:
       topologySpreadConstraints:
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: DoNotSchedule
+          whenUnsatisfiable: ScheduleAnyway
           labelSelector:
             matchLabels:
               app: sapiece-gateway
