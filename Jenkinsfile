@@ -26,7 +26,16 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                checkout scm
+                retry(3) {
+                    timeout(time: 2, unit: 'MINUTES') {
+                        checkout([$class: 'GitSCM',
+                            branches: [[name: '*/master']],
+                            doGenerateSubmoduleConfigurations: false,
+                            extensions: [[$class: 'CleanBeforeCheckout']],
+                            userRemoteConfigs: [[url: 'https://github.com/leileiya1/SAPieceGateway.git']]
+                        ])
+                    }
+                }
                 script {
                     env.REVISION = sh(script: 'git rev-parse --short=12 HEAD', returnStdout: true).trim()
                     currentBuild.displayName = "#${env.BUILD_NUMBER} ${env.REVISION}"
