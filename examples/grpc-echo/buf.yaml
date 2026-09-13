@@ -6,6 +6,11 @@ lint:
     - STANDARD
   except:
     - PACKAGE_DIRECTORY_MATCH
+    # These demo RPCs intentionally share the same wire-compatible dynamic
+    # messages. Renaming them would change the checked-in descriptor contract.
+    - RPC_REQUEST_STANDARD_NAME
+    - RPC_RESPONSE_STANDARD_NAME
+    - RPC_REQUEST_RESPONSE_UNIQUE
 breaking:
   use:
     - FILE
