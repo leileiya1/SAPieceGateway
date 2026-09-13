@@ -11,7 +11,9 @@ Required host setup is intentionally outside the pipeline:
 - the controller key is stored at
   `/var/jenkins_home/.ssh/school_agent_ed25519` and registered by the init hook;
 - the controller and `/home/jenkins/.ssh/known_hosts` on the agent pin the
-  authenticated school and `[ssh.github.com]:443` host keys;
+  authenticated school, Ubuntu worker (`10.65.13.94`), and
+  `[ssh.github.com]:443` host keys; verify a worker key against
+  `/etc/ssh/ssh_host_ed25519_key.pub` on that worker before installing it;
 - `controller-ssh-config` routes the controller's GitHub SSH connection through
   `school-linux`, so loading the `Jenkinsfile` does not depend on Ubuntu's
   unstable direct Internet path;
