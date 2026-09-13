@@ -24,5 +24,7 @@ deployments, runs all black-box tests, and restores the previous image tags when
 deployment or integration tests fail.
 
 `job.xml` is the controller-side Pipeline job definition. It checks out
-`master`, loads the repository `Jenkinsfile`, and polls every five minutes even
-before the first successful Pipeline run has registered the GitHub push trigger.
+`master` through `ssh.github.com:443` with the `github-ssh` credential, loads the
+repository `Jenkinsfile`, and polls every five minutes even before the first
+successful Pipeline run has registered the GitHub push trigger. Go validation
+uses persistent module/build caches and retries transient proxy failures.
