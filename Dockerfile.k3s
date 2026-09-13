@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 FROM maven:3.9-eclipse-temurin-25@sha256:31618505df21177d2baa3dc574be2d0b0b32614c8539baca1f23a9136b766eb0 AS maven
-FROM container-registry.oracle.com/graalvm/native-image:25i3@sha256:18253bc0069911faa4326c2e37144210e0d51d84fbb06411cc1b0b39e4fb04a3 AS builder
+FROM container-registry.oracle.com/graalvm/native-image:25i3@sha256:18253bc0069911faa4326c2e37144210e0d51d84fbb06411cc1b0b39e4fb04a3 AS build-base
 ARG NATIVE_BUILD_CPUS=12
 COPY --from=maven /usr/share/maven /usr/share/maven
 ENV PATH="/usr/share/maven/bin:${PATH}"
@@ -8,6 +8,15 @@ WORKDIR /build
 COPY pom.xml ./
 COPY .mvn ./.mvn
 COPY src ./src
+
+FROM build-base AS test
+RUN --mount=type=cache,target=/root/.m2 \
+    mvn -s .mvn/settings.xml -B -ntp -Pnative clean test
+
+FROM scratch AS test-reports
+COPY --from=test /build/target/surefire-reports/ /
+
+FROM build-base AS builder
 RUN --mount=type=cache,target=/root/.m2 mvn -s .mvn/settings.xml -B -ntp \
     -Pnative -Dnative.build.cpus=${NATIVE_BUILD_CPUS} native:compile \
     || { cat target/svm_err_*.md 2>/dev/null; exit 1; }

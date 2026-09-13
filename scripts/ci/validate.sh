@@ -12,7 +12,11 @@ retry() {
   done
 }
 
-mvn -s .mvn/settings.xml -B -ntp -Pnative clean test
+# Run Java tests in the same pinned GraalVM/JDK image used by native builds.
+# This avoids stale repository IDs and JDK drift in the long-lived agent home.
+mkdir -p "$repo_root/target/surefire-reports"
+retry docker build --pull -f Dockerfile.k3s --target test-reports \
+  --output "type=local,dest=$repo_root/target/surefire-reports" .
 retry docker pull golang:1.27-bookworm
 retry docker pull bufbuild/buf:1.73.0
 docker run --rm -v "$repo_root/examples/grpc-echo:/workspace" -w /workspace \

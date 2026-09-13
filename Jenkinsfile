@@ -77,6 +77,8 @@ pipeline {
             archiveArtifacts allowEmptyArchive: true,
                     artifacts: 'dist/deployed-images.txt,dist/previous-images.txt,dist/integration.log',
                     fingerprint: true
+        }
+        cleanup {
             deleteDir()
         }
     }
