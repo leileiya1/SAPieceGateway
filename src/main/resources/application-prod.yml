@@ -1,44 +1,25 @@
-# 生产环境配置
 spring:
-  application:
-    name: sapiece-gateway
-
-  # R2DBC 数据库配置（生产环境）
   r2dbc:
-    url: ${DB_URL:r2dbc:mysql://localhost:3306/blog_project}
-    username: ${DB_USERNAME:root}
-    password: ${DB_PASSWORD:your_password}
+    url: ${DB_URL:r2dbc:mysql://localhost:3306/sapiece_gateway}
+    username: ${DB_USERNAME:gateway}
+    password: ${DB_PASSWORD}
     pool:
-      initial-size: 20
-      max-size: 100
-
-  # Redis 配置（生产环境）
+      initial-size: 2
+      max-size: 30
+      max-acquire-time: 5s
   data:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:}
-      database: 0
-
-# JWT 配置（生产环境从环境变量读取）
 jwt:
-  secret: ${JWT_SECRET:SAPiece-Gateway-Production-Secret-Key-2025}
-  expiration: 604800000
-  refresh: 259200000
-
-# 限流配置（生产环境严格限制）
-rate-limit:
-  enabled: true
-  qps: 10
-  capacity: 20
-
-# 日志配置（生产环境简化日志）
+  secret: ${JWT_SECRET}
+server:
+  port: ${SERVER_PORT:8080}
 logging:
   level:
-    root: WARN
+    root: INFO
     com.sapiece.nova.sapiecegateway: INFO
     org.springframework.r2dbc: WARN
     org.springframework.security: WARN
-
-server:
-  port: ${SERVER_PORT:8080}
+    org.springframework.cloud.gateway: INFO

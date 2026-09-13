@@ -96,12 +96,18 @@ public class SecurityConfig {
                         // 认证相关接口（登录、注册等）
                         .pathMatchers("/auth/**").permitAll()
                         // Actuator监控端点
-                        .pathMatchers("/actuator/**").permitAll()
+                        .pathMatchers("/actuator/health", "/actuator/health/**").permitAll()
+                        .pathMatchers("/actuator/prometheus").permitAll()
+                        .pathMatchers("/actuator/**").hasRole("ADMIN")
                         // Swagger文档
                         .pathMatchers("/swagger-ui.html", "/swagger-ui/**", "/v3/api-docs/**").permitAll()
                         // 健康检查
                         .pathMatchers("/health", "/health/**").permitAll()
-                        
+                        // Nova 公开接口：验证码（注册/找回密码前调用）
+                        .pathMatchers("/v1/notification/captcha", "/v1/notification/captcha/verify").permitAll()
+                        // Nova 公开接口：支付宝异步回调
+                        .pathMatchers("/v1/payments/alipay/notify").permitAll()
+
                         // ==================== 需要认证的接口 ====================
                         // 使用自定义权限管理器进行细粒度权限验证
                         // 权限规则从 sys_gateway_route 表读取

@@ -50,17 +50,15 @@ public class DatabaseRouteDefinitionRepository implements RouteDefinitionReposit
     private Flux<RouteDefinition> loadAndCache() {
         log.debug("从数据库加载动态路由配置...");
         Flux<RouteDefinition> fresh = routeRepository.findAllEnabled()
-                .map(entity -> {
+                .<RouteDefinition>handle((entity, sink) -> {
                     try {
                         RouteDefinition def = converter.convert(entity);
                         log.debug("加载路由: id={}, uri={}", entity.getRouteId(), entity.getUri());
-                        return def;
+                        sink.next(def);
                     } catch (Exception e) {
                         log.error("转换路由失败: routeId={}, error={}", entity.getRouteId(), e.getMessage());
-                        return null;
                     }
                 })
-                .filter(def -> def != null)
                 .doOnComplete(() -> log.info("动态路由加载完成"))
                 .doOnError(err -> log.error("加载动态路由失败: {}", err.getMessage()))
                 .cache(); // 让多个并发订阅共享同一次DB查询

@@ -1,0 +1,9 @@
+FROM scratch AS server
+COPY dist/grpc-echo /grpc-echo
+USER 65532:65532
+EXPOSE 9090 8081
+ENTRYPOINT ["/grpc-echo"]
+
+FROM envoyproxy/envoy:v1.39.0 AS transcoder
+COPY dist/echo.pb /etc/envoy/echo.pb
+COPY envoy/envoy.yaml /etc/envoy/envoy.yaml

@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package sapiece.demo.v1;
+
+service EchoService {
+  rpc Echo(EchoRequest) returns (EchoReply);
+  rpc StreamEcho(EchoRequest) returns (stream EchoReply);
+  rpc Fail(FailureRequest) returns (EchoReply);
+}
+
+message EchoRequest {
+  string message = 1;
+  int32 repeat = 2;
+  int32 delay_ms = 3;
+}
+
+message FailureRequest {
+  string mode = 1;
+}
+
+message EchoReply {
+  string message = 1;
+  string instance = 2;
+  int64 request_id = 3;
+}

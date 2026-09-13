@@ -1,6 +1,7 @@
 package com.sapiece.nova.sapiecegateway.controller;
 
 import com.sapiece.nova.sapiecegateway.common.Result;
+import com.sapiece.nova.sapiecegateway.exception.BusinessException;
 import com.sapiece.nova.sapiecegateway.service.UserService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -41,6 +42,16 @@ public class UserController {
     @Operation(summary = "修改密码", description = "修改当前用户的密码，修改后旧Token将失效")
     @PreAuthorize("isAuthenticated()")
     public Mono<Result<String>> changePassword(@RequestBody ChangePasswordRequest request) {
+        if (request == null || request.getOldPassword() == null || request.getOldPassword().isBlank()) {
+            throw new IllegalArgumentException("旧密码不能为空");
+        }
+        if (request.getNewPassword() == null || request.getNewPassword().length() < 12
+                || request.getNewPassword().length() > 72) {
+            throw new IllegalArgumentException("新密码长度必须在12到72个字符之间");
+        }
+        if (request.getNewPassword().equals(request.getOldPassword())) {
+            throw new IllegalArgumentException("新密码不能与旧密码相同");
+        }
         return ReactiveSecurityContextHolder.getContext()
                 .map(SecurityContext::getAuthentication)
                 .flatMap(auth -> {
@@ -55,14 +66,10 @@ public class UserController {
                                     result = Result.success("密码修改成功，请重新登录", null);
                                 } else {
                                     log.warn("密码修改失败, username: {}", username);
-                                    result = Result.error("密码修改失败，请检查旧密码是否正确", null);
+                                    throw new BusinessException(400, "密码修改失败，请检查旧密码是否正确");
                                 }
                                 return result;
                             });
-                })
-                .onErrorResume(e -> {
-                    log.error("修改密码异常", e);
-                    return Mono.just(Result.error("修改密码失败：" + e.getMessage(), null));
                 });
     }
 

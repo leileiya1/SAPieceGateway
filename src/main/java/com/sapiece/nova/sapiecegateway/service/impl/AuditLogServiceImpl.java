@@ -3,11 +3,16 @@ package com.sapiece.nova.sapiecegateway.service.impl;
 import cn.hutool.http.useragent.UserAgent;
 import cn.hutool.http.useragent.UserAgentUtil;
 import com.sapiece.nova.sapiecegateway.entity.SysAuditLog;
+import com.sapiece.nova.sapiecegateway.dto.AuditLogSearchCriteria;
 import com.sapiece.nova.sapiecegateway.repository.SysAuditLogRepository;
 import com.sapiece.nova.sapiecegateway.service.AuditLogService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.data.domain.Sort;
+import org.springframework.data.r2dbc.core.R2dbcEntityTemplate;
+import org.springframework.data.relational.core.query.Criteria;
+import org.springframework.data.relational.core.query.Query;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
@@ -28,6 +33,7 @@ import java.util.UUID;
 public class AuditLogServiceImpl implements AuditLogService {
 
     private final SysAuditLogRepository auditLogRepository;
+    private final R2dbcEntityTemplate entityTemplate;
 
     /**
      * 记录审计日志（异步，不影响主流程）
@@ -249,6 +255,23 @@ public class AuditLogServiceImpl implements AuditLogService {
                 .doOnComplete(() -> log.debug("时间范围审计日志查询完成"));
     }
 
+    @Override
+    public Flux<SysAuditLog> search(AuditLogSearchCriteria value) {
+        Criteria criteria = Criteria.empty();
+        if (value.getUserId() != null) criteria = criteria.and("user_id").is(value.getUserId());
+        if (hasText(value.getUserName())) criteria = criteria.and("user_name").is(value.getUserName().trim());
+        if (hasText(value.getModule())) criteria = criteria.and("module").is(value.getModule().trim().toUpperCase());
+        if (hasText(value.getOperation())) criteria = criteria.and("operation").is(value.getOperation().trim().toUpperCase());
+        if (value.getStatus() != null) criteria = criteria.and("status").is(value.getStatus());
+        if (hasText(value.getClientIp())) criteria = criteria.and("client_ip").is(value.getClientIp().trim());
+        if (value.getStartTime() != null) criteria = criteria.and("operate_time").greaterThanOrEquals(value.getStartTime());
+        if (value.getEndTime() != null) criteria = criteria.and("operate_time").lessThanOrEquals(value.getEndTime());
+        Query query = Query.query(criteria)
+                .sort(Sort.by(Sort.Direction.DESC, "operate_time"))
+                .limit(value.getLimit());
+        return entityTemplate.select(SysAuditLog.class).matching(query).all();
+    }
+
     /**
      * 查询用户最近的登录记录
      */
@@ -315,6 +338,10 @@ public class AuditLogServiceImpl implements AuditLogService {
         if (auditLog.getStatus() == null) {
             auditLog.setStatus(SysAuditLog.Status.SUCCESS);
         }
+    }
+
+    private static boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 
     /**

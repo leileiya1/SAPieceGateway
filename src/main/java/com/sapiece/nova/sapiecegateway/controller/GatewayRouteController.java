@@ -2,6 +2,7 @@ package com.sapiece.nova.sapiecegateway.controller;
 
 import com.sapiece.nova.sapiecegateway.common.Result;
 import com.sapiece.nova.sapiecegateway.entity.SysGatewayRoute;
+import com.sapiece.nova.sapiecegateway.exception.BusinessException;
 import com.sapiece.nova.sapiecegateway.route.DynamicRouteService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -70,7 +71,7 @@ public class GatewayRouteController {
         log.debug("查询路由详情: id={}", id);
         return dynamicRouteService.getById(id)
                 .map(Result::success)
-                .defaultIfEmpty(Result.error(404, "路由不存在"));
+                .switchIfEmpty(Mono.error(new BusinessException(404, "路由不存在")));
     }
 
     /**
@@ -84,7 +85,7 @@ public class GatewayRouteController {
         log.debug("查询路由详情: routeId={}", routeId);
         return dynamicRouteService.getByRouteId(routeId)
                 .map(Result::success)
-                .defaultIfEmpty(Result.error(404, "路由不存在"));
+                .switchIfEmpty(Mono.error(new BusinessException(404, "路由不存在")));
     }
 
     /**
@@ -118,11 +119,7 @@ public class GatewayRouteController {
         }
 
         return dynamicRouteService.addRoute(route)
-                .map(saved -> Result.success("路由创建成功", saved))
-                .onErrorResume(e -> {
-                    log.error("新增路由失败: {}", e.getMessage());
-                    return Mono.just(Result.error(400, e.getMessage()));
-                });
+                .map(saved -> Result.success("路由创建成功", saved));
     }
 
     /**
@@ -143,11 +140,7 @@ public class GatewayRouteController {
         }
 
         return dynamicRouteService.updateRoute(id, route)
-                .map(updated -> Result.success("路由更新成功", updated))
-                .onErrorResume(e -> {
-                    log.error("修改路由失败: {}", e.getMessage());
-                    return Mono.just(Result.error(400, e.getMessage()));
-                });
+                .map(updated -> Result.success("路由更新成功", updated));
     }
 
     /**
@@ -160,11 +153,7 @@ public class GatewayRouteController {
             @Parameter(description = "路由主键ID") @PathVariable Long id) {
         log.info("删除路由: id={}", id);
         return dynamicRouteService.deleteRoute(id)
-                .then(Mono.just(Result.<Void>success("路由删除成功", null)))
-                .onErrorResume(e -> {
-                    log.error("删除路由失败了: {}", e.getMessage());
-                    return Mono.just(Result.error(400, e.getMessage()));
-                });
+                .then(Mono.just(Result.<Void>success("路由删除成功", null)));
     }
 
     /**
@@ -177,11 +166,7 @@ public class GatewayRouteController {
             @Parameter(description = "路由ID") @PathVariable String routeId) {
         log.info("删除路由: routeId={}", routeId);
         return dynamicRouteService.deleteByRouteId(routeId)
-                .then(Mono.just(Result.<Void>success("路由删除成功", null)))
-                .onErrorResume(e -> {
-                    log.error("删除路由失败: {}", e.getMessage());
-                    return Mono.just(Result.error(400, e.getMessage()));
-                });
+                .then(Mono.just(Result.<Void>success("路由删除成功", null)));
     }
 
     /**
@@ -198,10 +183,6 @@ public class GatewayRouteController {
                 .map(updated -> {
                     String statusText = status == 1 ? "启用" : "禁用";
                     return Result.success("路由" + statusText + "成功", updated);
-                })
-                .onErrorResume(e -> {
-                    log.error("修改路由状态失败: {}", e.getMessage());
-                    return Mono.just(Result.error(400, e.getMessage()));
                 });
     }
 

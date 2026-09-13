@@ -33,8 +33,8 @@ import java.util.Map;
  *  - EnhancedRateLimitFilter（Lua token bucket）→ 全局限流（IP/用户/路由维度）
  *  - Sentinel → 下游服务熔断降级（慢调用、异常比率自动熔断）
  *
- * 熔断规则通过 Nacos 持久化（application.yml sentinel.datasource.*），
- * 也可在 Sentinel Dashboard 实时修改，无需重启服务。
+ * 熔断规则通过版本化 ConfigMap 和滚动发布变更，避免运行时配置中心
+ * 故障影响网关启动。
  *
  * @author SAPiece
  * @since 2026-04-26
@@ -73,7 +73,7 @@ public class SentinelGatewayConfig {
     /**
      * 初始化：
      * 1. 注册统一 JSON 格式的熔断响应（替换默认的 "Blocked by Sentinel" 文本）
-     * 2. 加载默认兜底熔断规则（Nacos 数据源就绪后会自动覆盖）
+     * 2. 加载版本化的默认熔断规则
      */
     @PostConstruct
     public void init() {
@@ -97,7 +97,7 @@ public class SentinelGatewayConfig {
     }
 
     /**
-     * 默认兜底熔断规则（Nacos 数据源就绪后会被覆盖）
+     * 默认熔断规则
      *
      * 资源名约定：与 sys_gateway_route 表的 route_id 字段一致
      * 例如：user-service、order-service 等
@@ -110,7 +110,7 @@ public class SentinelGatewayConfig {
                 buildExceptionRatioRule("_default_error_", 0.5, 5, 10)
         );
         DegradeRuleManager.loadRules(rules);
-        log.info("Sentinel 默认兜底熔断规则已加载（共 {} 条），Nacos 数据源就绪后将自动覆盖", rules.size());
+        log.info("Sentinel 默认熔断规则已加载（共 {} 条）", rules.size());
     }
 
     private DegradeRule buildSlowCallRule(String resource, int rtMs, double slowRatio,

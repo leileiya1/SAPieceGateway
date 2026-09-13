@@ -8,6 +8,8 @@ import com.sapiece.nova.sapiecegateway.route.impl.DynamicRouteServiceImpl;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.cloud.gateway.event.RefreshRoutesEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.redis.core.ReactiveRedisTemplate;
 import org.springframework.data.redis.listener.ChannelTopic;
 import org.springframework.security.core.Authentication;
@@ -40,6 +42,7 @@ public class RoutePermissionService {
     private final ObjectMapper objectMapper;
     private final ReactiveRedisTemplate<String, String> reactiveRedisTemplate;
     private final DatabaseRouteDefinitionRepository routeDefinitionRepository;
+    private final ApplicationEventPublisher eventPublisher;
     private final AntPathMatcher pathMatcher = new AntPathMatcher();
     private final AtomicReference<List<RoutePredicateHolder>> routeCache =
             new AtomicReference<>(Collections.emptyList());
@@ -50,12 +53,7 @@ public class RoutePermissionService {
     @PostConstruct
     public void subscribeRouteChanges() {
         reactiveRedisTemplate.listenToChannel(DynamicRouteServiceImpl.ROUTE_CHANGE_CHANNEL)
-                .doOnNext(msg -> {
-                    log.info("收到路由变更通知，清空本地路由权限缓存和路由定义缓存");
-                    routeCache.set(Collections.emptyList());
-                    lastRouteCacheRefresh.set(0L);
-                    routeDefinitionRepository.invalidateCache();
-                })
+                .doOnNext(msg -> handleRouteChange())
                 .retryWhen(Retry.backoff(Long.MAX_VALUE, Duration.ofSeconds(2))
                         .maxBackoff(Duration.ofSeconds(30)))
                 .subscribe(
@@ -63,6 +61,14 @@ public class RoutePermissionService {
                         err -> log.error("路由变更订阅异常: {}", err.getMessage())
                 );
         log.info("已订阅路由变更频道: {}", DynamicRouteServiceImpl.ROUTE_CHANGE_CHANNEL);
+    }
+
+    void handleRouteChange() {
+        log.info("收到路由变更通知，清空本地缓存并重建Spring Gateway路由");
+        routeCache.set(Collections.emptyList());
+        lastRouteCacheRefresh.set(0L);
+        routeDefinitionRepository.invalidateCache();
+        eventPublisher.publishEvent(new RefreshRoutesEvent(this));
     }
 
     /**

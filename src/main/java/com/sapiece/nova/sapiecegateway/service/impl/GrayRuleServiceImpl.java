@@ -347,6 +347,8 @@ public class GrayRuleServiceImpl implements GrayRuleService {
     public Mono<SysGrayRule> addRule(SysGrayRule rule) {
         log.info("新增灰度规则, ruleCode: {}, serviceId: {}", rule.getRuleCode(), rule.getServiceId());
 
+        validateRule(rule, false);
+
         // 设置默认值
         if (rule.getPriority() == null) {
             rule.setPriority(0);
@@ -358,11 +360,8 @@ public class GrayRuleServiceImpl implements GrayRuleService {
         rule.setUpdateTime(LocalDateTime.now());
 
         return grayRuleRepository.save(rule)
-                .doOnSuccess(saved -> {
-                    log.info("灰度规则新增成功, id: {}, ruleCode: {}", saved.getId(), saved.getRuleCode());
-                    // 刷新缓存
-                    refreshCache().subscribe();
-                });
+                .flatMap(saved -> refreshCache().thenReturn(saved))
+                .doOnSuccess(saved -> log.info("灰度规则新增成功, id: {}, ruleCode: {}", saved.getId(), saved.getRuleCode()));
     }
 
     /**
@@ -371,6 +370,8 @@ public class GrayRuleServiceImpl implements GrayRuleService {
     @Override
     public Mono<SysGrayRule> updateRule(Long id, SysGrayRule rule) {
         log.info("更新灰度规则, id: {}", id);
+
+        validateRule(rule, true);
 
         return grayRuleRepository.findById(id)
                 .flatMap(existing -> {
@@ -407,11 +408,8 @@ public class GrayRuleServiceImpl implements GrayRuleService {
 
                     return grayRuleRepository.save(existing);
                 })
-                .doOnSuccess(updated -> {
-                    log.info("灰度规则更新成功, id: {}, ruleCode: {}", updated.getId(), updated.getRuleCode());
-                    // 刷新缓存
-                    refreshCache().subscribe();
-                });
+                .flatMap(updated -> refreshCache().thenReturn(updated))
+                .doOnSuccess(updated -> log.info("灰度规则更新成功, id: {}, ruleCode: {}", updated.getId(), updated.getRuleCode()));
     }
 
     /**
@@ -422,11 +420,8 @@ public class GrayRuleServiceImpl implements GrayRuleService {
         log.info("删除灰度规则, id: {}", id);
 
         return grayRuleRepository.deleteById(id)
-                .doOnSuccess(v -> {
-                    log.info("灰度规则删除成功, id: {}", id);
-                    // 刷新缓存
-                    refreshCache().subscribe();
-                });
+                .then(refreshCache())
+                .doOnSuccess(v -> log.info("灰度规则删除成功, id: {}", id));
     }
 
     /**
@@ -442,11 +437,8 @@ public class GrayRuleServiceImpl implements GrayRuleService {
                     rule.setUpdateTime(LocalDateTime.now());
                     return grayRuleRepository.save(rule);
                 })
-                .doOnSuccess(rule -> {
-                    log.info("灰度规则启用成功, id: {}, ruleCode: {}", rule.getId(), rule.getRuleCode());
-                    // 刷新缓存
-                    refreshCache().subscribe();
-                });
+                .flatMap(rule -> refreshCache().thenReturn(rule))
+                .doOnSuccess(rule -> log.info("灰度规则启用成功, id: {}, ruleCode: {}", rule.getId(), rule.getRuleCode()));
     }
 
     /**
@@ -462,11 +454,8 @@ public class GrayRuleServiceImpl implements GrayRuleService {
                     rule.setUpdateTime(LocalDateTime.now());
                     return grayRuleRepository.save(rule);
                 })
-                .doOnSuccess(rule -> {
-                    log.info("灰度规则禁用成功, id: {}, ruleCode: {}", rule.getId(), rule.getRuleCode());
-                    // 刷新缓存
-                    refreshCache().subscribe();
-                });
+                .flatMap(rule -> refreshCache().thenReturn(rule))
+                .doOnSuccess(rule -> log.info("灰度规则禁用成功, id: {}, ruleCode: {}", rule.getId(), rule.getRuleCode()));
     }
 
     /**
@@ -493,5 +482,47 @@ public class GrayRuleServiceImpl implements GrayRuleService {
                             ruleCache.size(), rules.size());
                     return Mono.empty();
                 });
+    }
+
+    private void validateRule(SysGrayRule rule, boolean patch) {
+        if (rule == null) {
+            throw new IllegalArgumentException("灰度规则不能为空");
+        }
+        if (!patch) {
+            if (rule.getRuleCode() == null || !rule.getRuleCode().matches("[A-Za-z0-9][A-Za-z0-9._-]{0,63}")) {
+                throw new IllegalArgumentException("规则编码格式不正确");
+            }
+            if (rule.getServiceId() == null || rule.getServiceId().isBlank()) {
+                throw new IllegalArgumentException("服务ID不能为空");
+            }
+            if (rule.getStrategyType() == null || rule.getStrategyType().isBlank()) {
+                throw new IllegalArgumentException("策略类型不能为空");
+            }
+            if (rule.getStrategyConfig() == null || rule.getStrategyConfig().isBlank()) {
+                throw new IllegalArgumentException("策略配置不能为空");
+            }
+        }
+        if (rule.getTargetUri() != null && !(rule.getTargetUri().startsWith("http://")
+                || rule.getTargetUri().startsWith("https://") || rule.getTargetUri().startsWith("lb://"))) {
+            throw new IllegalArgumentException("灰度目标URI只允许http、https或lb协议");
+        }
+        if (rule.getStableUri() != null && !(rule.getStableUri().startsWith("http://")
+                || rule.getStableUri().startsWith("https://") || rule.getStableUri().startsWith("lb://"))) {
+            throw new IllegalArgumentException("稳定版本URI只允许http、https或lb协议");
+        }
+        if (rule.getStatus() != null && rule.getStatus() != 0 && rule.getStatus() != 1) {
+            throw new IllegalArgumentException("灰度规则状态只能是0或1");
+        }
+        if (rule.getEffectiveStart() != null && rule.getEffectiveEnd() != null
+                && rule.getEffectiveStart().isAfter(rule.getEffectiveEnd())) {
+            throw new IllegalArgumentException("生效开始时间不能晚于结束时间");
+        }
+        if (rule.getStrategyConfig() != null) {
+            try {
+                objectMapper.readTree(rule.getStrategyConfig());
+            } catch (JsonProcessingException e) {
+                throw new IllegalArgumentException("策略配置必须是有效JSON", e);
+            }
+        }
     }
 }

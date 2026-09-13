@@ -83,8 +83,16 @@ public class TokenBlacklistServiceImpl implements TokenBlacklistService {
                         log.debug("Token不在黑名单中, tokenHash: {}", tokenHash);
                     }
                 })
-                .doOnError(error -> log.error("检查Token黑名单异常, error: {}", error.getMessage()))
-                .onErrorReturn(false);
+                .doOnError(error -> log.error("检查Token黑名单异常, error: {}", error.getMessage()));
+    }
+
+    @Override
+    public Mono<Boolean> consumeRefreshToken(String token, Duration remainingLifetime) {
+        if (remainingLifetime.isNegative() || remainingLifetime.isZero()) {
+            return Mono.just(false);
+        }
+        return reactiveRedisTemplate.opsForValue().setIfAbsent(
+                TOKEN_BLACKLIST_PREFIX + hashToken(token), "1", remainingLifetime);
     }
 
     /**
@@ -159,8 +167,7 @@ public class TokenBlacklistServiceImpl implements TokenBlacklistService {
                         log.debug("用户不在黑名单中, userId: {}", userId);
                     }
                 })
-                .doOnError(error -> log.error("检查用户黑名单异常, userId: {}, error: {}", userId, error.getMessage()))
-                .onErrorReturn(false);
+                .doOnError(error -> log.error("检查用户黑名单异常, userId: {}, error: {}", userId, error.getMessage()));
     }
 
     /**

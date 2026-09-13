@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sapiece.nova.sapiecegateway.entity.SysOAuthConfig;
 import com.sapiece.nova.sapiecegateway.entity.SysOAuthUser;
+import com.sapiece.nova.sapiecegateway.exception.BusinessException;
 import com.sapiece.nova.sapiecegateway.repository.SysOAuthConfigRepository;
 import com.sapiece.nova.sapiecegateway.repository.SysOAuthUserRepository;
 import com.sapiece.nova.sapiecegateway.repository.SysUserRepository;
@@ -11,12 +12,18 @@ import com.sapiece.nova.sapiecegateway.service.AuditLogService;
 import com.sapiece.nova.sapiecegateway.service.OAuth2Service;
 import com.sapiece.nova.sapiecegateway.service.SysRoleService;
 import com.sapiece.nova.sapiecegateway.service.SysMenuService;
+import com.sapiece.nova.sapiecegateway.security.OAuthOutboundUriPolicy;
+import com.sapiece.nova.sapiecegateway.security.SensitiveDataCipher;
 import com.sapiece.nova.sapiecegateway.util.JwtUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientException;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
+import org.springframework.web.reactive.function.BodyInserters;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -46,6 +53,8 @@ public class OAuth2ServiceImpl implements OAuth2Service {
     private final AuditLogService auditLogService;
     private final ObjectMapper objectMapper;
     private final WebClient.Builder webClientBuilder;
+    private final SensitiveDataCipher sensitiveDataCipher;
+    private final OAuthOutboundUriPolicy outboundUriPolicy;
 
     // ==================== 授权流程方法 ====================
 
@@ -54,7 +63,7 @@ public class OAuth2ServiceImpl implements OAuth2Service {
      */
     @Override
     public Mono<String> getAuthorizationUrl(String provider, String state) {
-        log.info("获取OAuth授权URL, provider: {}, state: {}", provider, state);
+        log.info("获取OAuth授权URL, provider: {}", provider);
 
         return getConfigByProvider(provider)
                 .map(config -> {
@@ -62,14 +71,14 @@ public class OAuth2ServiceImpl implements OAuth2Service {
                     log.info("生成OAuth授权URL成功, provider: {}", provider);
                     return authUrl;
                 })
-                .switchIfEmpty(Mono.error(new RuntimeException("OAuth配置不存在或未启用: " + provider)));
+                .switchIfEmpty(Mono.error(new BusinessException(404, "OAuth配置不存在或未启用: " + provider)));
     }
 
     /**
      * 构建授权URL
      */
     private String buildAuthorizationUrl(SysOAuthConfig config, String state) {
-        StringBuilder url = new StringBuilder(config.getAuthorizationUri());
+        StringBuilder url = new StringBuilder(outboundUriPolicy.requireAllowed(config.getAuthorizationUri()).toString());
         url.append("?client_id=").append(config.getClientId());
         url.append("&redirect_uri=").append(URLEncoder.encode(config.getRedirectUri(), StandardCharsets.UTF_8));
         url.append("&response_type=code");
@@ -94,8 +103,11 @@ public class OAuth2ServiceImpl implements OAuth2Service {
                     // 1. 用授权码换取AccessToken
                     return getAccessToken(config, code)
                             .flatMap(tokenResponse -> {
-                                String accessToken = (String) tokenResponse.get("access_token");
-                                String refreshToken = (String) tokenResponse.get("refresh_token");
+                                Object accessTokenValue = tokenResponse.get("access_token");
+                                if (!(accessTokenValue instanceof String accessToken) || accessToken.isBlank()) {
+                                    return Mono.error(new BusinessException(502, "OAuth上游响应缺少Access Token"));
+                                }
+                                String refreshToken = tokenResponse.get("refresh_token") instanceof String value ? value : null;
 
                                 log.info("获取AccessToken成功, provider: {}", provider);
 
@@ -109,8 +121,11 @@ public class OAuth2ServiceImpl implements OAuth2Service {
                                         });
                             });
                 })
+                .switchIfEmpty(Mono.error(new BusinessException(404, "OAuth配置不存在或未启用: " + provider)))
                 .doOnSuccess(oauthUser -> log.info("OAuth回调处理完成, provider: {}, oauthId: {}",
                         provider, oauthUser.getOauthId()))
+                .onErrorMap(WebClientException.class,
+                        error -> new BusinessException(502, "OAuth上游服务请求失败", error))
                 .doOnError(error -> log.error("OAuth回调处理失败, provider: {}, error: {}",
                         provider, error.getMessage()));
     }
@@ -123,18 +138,18 @@ public class OAuth2ServiceImpl implements OAuth2Service {
 
         WebClient webClient = webClientBuilder.build();
 
-        // 构建请求参数
-        String body = "client_id=" + config.getClientId() +
-                "&client_secret=" + config.getClientSecret() +
-                "&code=" + code +
-                "&redirect_uri=" + URLEncoder.encode(config.getRedirectUri(), StandardCharsets.UTF_8) +
-                "&grant_type=authorization_code";
+        MultiValueMap<String, String> body = new LinkedMultiValueMap<>();
+        body.add("client_id", config.getClientId());
+        body.add("client_secret", sensitiveDataCipher.decrypt(config.getClientSecret()));
+        body.add("code", code);
+        body.add("redirect_uri", config.getRedirectUri());
+        body.add("grant_type", "authorization_code");
 
         return webClient.post()
-                .uri(config.getTokenUri())
+                .uri(outboundUriPolicy.requireAllowed(config.getTokenUri()))
                 .contentType(MediaType.APPLICATION_FORM_URLENCODED)
                 .header("Accept", "application/json")
-                .bodyValue(body)
+                .body(BodyInserters.fromFormData(body))
                 .retrieve()
                 .bodyToMono(String.class)
                 .flatMap(response -> {
@@ -143,7 +158,7 @@ public class OAuth2ServiceImpl implements OAuth2Service {
                         return Mono.just(result);
                     } catch (Exception e) {
                         log.error("解析AccessToken响应失败: {}", e.getMessage());
-                        return Mono.error(new RuntimeException("解析AccessToken失败"));
+                        return Mono.error(new BusinessException(502, "OAuth上游Token响应格式错误", e));
                     }
                 });
     }
@@ -157,7 +172,7 @@ public class OAuth2ServiceImpl implements OAuth2Service {
         WebClient webClient = webClientBuilder.build();
 
         return webClient.get()
-                .uri(config.getUserInfoUri())
+                .uri(outboundUriPolicy.requireAllowed(config.getUserInfoUri()))
                 .header("Authorization", "Bearer " + accessToken)
                 .header("Accept", "application/json")
                 .retrieve()
@@ -168,7 +183,7 @@ public class OAuth2ServiceImpl implements OAuth2Service {
                         return Mono.just(result);
                     } catch (Exception e) {
                         log.error("解析用户信息响应失败: {}", e.getMessage());
-                        return Mono.error(new RuntimeException("解析用户信息失败"));
+                        return Mono.error(new BusinessException(502, "OAuth上游用户信息格式错误", e));
                     }
                 });
     }
@@ -254,8 +269,8 @@ public class OAuth2ServiceImpl implements OAuth2Service {
         }
 
         // 保存Token
-        oauthUser.setAccessToken(accessToken);
-        oauthUser.setRefreshToken(refreshToken);
+        oauthUser.setAccessToken(sensitiveDataCipher.encrypt(accessToken));
+        oauthUser.setRefreshToken(sensitiveDataCipher.encrypt(refreshToken));
 
         // 保存原始用户信息
         try {
@@ -324,10 +339,10 @@ public class OAuth2ServiceImpl implements OAuth2Service {
                 .flatMap(user -> {
                     // 检查用户状态
                     if (user.getStatus() != 1) {
-                        return Mono.error(new RuntimeException("用户已被禁用"));
+                        return Mono.error(new BusinessException(403, "用户已被禁用"));
                     }
                     if (user.getDelFlag() != 0) {
-                        return Mono.error(new RuntimeException("用户已被删除"));
+                        return Mono.error(new BusinessException(403, "用户已被删除"));
                     }
 
                     // 获取角色和权限
@@ -357,7 +372,7 @@ public class OAuth2ServiceImpl implements OAuth2Service {
                                         return result;
                                     }));
                 })
-                .switchIfEmpty(Mono.error(new RuntimeException("绑定的系统用户不存在")));
+                .switchIfEmpty(Mono.error(new BusinessException(404, "绑定的系统用户不存在")));
     }
 
     // ==================== 绑定管理方法 ====================
@@ -371,14 +386,14 @@ public class OAuth2ServiceImpl implements OAuth2Service {
         return oauthUserRepository.findById(oauthUserId)
                 .flatMap(oauthUser -> {
                     if (oauthUser.isBound()) {
-                        return Mono.error(new RuntimeException("该OAuth账号已绑定其他用户"));
+                        return Mono.error(new BusinessException(409, "该OAuth账号已绑定其他用户"));
                     }
                     // 检查用户是否已绑定同一提供商的账号
                     return oauthUserRepository.findByUserIdAndProvider(userId, oauthUser.getProvider())
                             .hasElement()
                             .flatMap(exists -> {
                                 if (exists) {
-                                    return Mono.error(new RuntimeException("您已绑定过该平台的账号"));
+                                    return Mono.error(new BusinessException(409, "您已绑定过该平台的账号"));
                                 }
                                 // 执行绑定
                                 oauthUser.setUserId(userId);
@@ -389,7 +404,7 @@ public class OAuth2ServiceImpl implements OAuth2Service {
                                                 userId, saved.getProvider()));
                             });
                 })
-                .switchIfEmpty(Mono.error(new RuntimeException("OAuth账号信息不存在")));
+                .switchIfEmpty(Mono.error(new BusinessException(404, "OAuth账号信息不存在")));
     }
 
     /**

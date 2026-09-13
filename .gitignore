@@ -23,8 +23,6 @@ docs/
 postman/
 jmeter/
 logs/
-/src/test/
-/src/main/resources
 ### NetBeans ###
 /nbproject/private/
 /nbbuild/
@@ -37,3 +35,12 @@ build/
 
 ### VS Code ###
 .vscode/
+.DS_Store
+.env
+.env.*
+!.env.example
+*.tar.gz
+/k8s/secret.yaml
+
+__pycache__/
+*.pyc

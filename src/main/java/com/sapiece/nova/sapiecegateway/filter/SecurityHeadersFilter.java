@@ -35,13 +35,15 @@ public class SecurityHeadersFilter implements WebFilter, Ordered {
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
-        return chain.filter(exchange).doFinally(signal -> {
+        exchange.getResponse().beforeCommit(() -> {
             HttpHeaders headers = exchange.getResponse().getHeaders();
 
             // 防 XSS / 数据注入：内容安全策略
             // API 网关通常不直接服务 HTML，但注入 CSP 防止潜在的内联脚本注入
-            headers.set("Content-Security-Policy",
-                    "default-src 'none'; frame-ancestors 'none'");
+            boolean swagger = exchange.getRequest().getPath().value().startsWith("/swagger-ui");
+            headers.set("Content-Security-Policy", swagger
+                    ? "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-ancestors 'none'"
+                    : "default-src 'none'; frame-ancestors 'none'");
 
             // 防点击劫持
             headers.set("X-Frame-Options", "DENY");
@@ -64,12 +66,15 @@ public class SecurityHeadersFilter implements WebFilter, Ordered {
             }
 
             // HSTS：仅 HTTPS 下有效，浏览器下次直接走 HTTPS（includeSubDomains 可选）
-            headers.set("Strict-Transport-Security",
-                    "max-age=31536000; includeSubDomains");
+            if ("https".equalsIgnoreCase(exchange.getRequest().getURI().getScheme())) {
+                headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+            }
 
             // 移除服务器信息泄露
             headers.remove("X-Powered-By");
             headers.remove("Server");
+            return Mono.empty();
         });
+        return chain.filter(exchange);
     }
 }

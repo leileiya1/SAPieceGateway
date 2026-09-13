@@ -3,15 +3,18 @@ package com.sapiece.nova.sapiecegateway.route;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sapiece.nova.sapiecegateway.discovery.KubernetesDnsDiscoveryProperties;
 import com.sapiece.nova.sapiecegateway.entity.SysGatewayRoute;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cloud.gateway.filter.FilterDefinition;
 import org.springframework.cloud.gateway.handler.predicate.PredicateDefinition;
 import org.springframework.cloud.gateway.route.RouteDefinition;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.stereotype.Component;
 
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -28,9 +31,11 @@ import java.util.stream.Collectors;
 @Slf4j
 @Component
 @RequiredArgsConstructor
+@EnableConfigurationProperties(KubernetesDnsDiscoveryProperties.class)
 public class RouteDefinitionConverter {
 
     private final ObjectMapper objectMapper;
+    private final KubernetesDnsDiscoveryProperties kubernetesDns;
 
     // ==================== Metadata Key 常量 ====================
 
@@ -67,7 +72,7 @@ public class RouteDefinitionConverter {
 
         // 设置目标URI
         try {
-            definition.setUri(URI.create(entity.getUri()));
+            definition.setUri(resolveTargetUri(entity.getUri()));
         } catch (IllegalArgumentException e) {
             log.error("无效的URI格式: routeId={}, uri={}", entity.getRouteId(), entity.getUri());
             throw new IllegalArgumentException("无效的路由URI: " + entity.getUri(), e);
@@ -92,6 +97,31 @@ public class RouteDefinitionConverter {
                 entity.getRequireAuth());
 
         return definition;
+    }
+
+    private URI resolveTargetUri(String rawUri) {
+        URI uri = URI.create(rawUri);
+        if (!"lb".equalsIgnoreCase(uri.getScheme())) {
+            return uri;
+        }
+        if (!kubernetesDns.isEnabled()) {
+            throw new IllegalArgumentException("lb://路由要求启用Kubernetes DNS服务发现");
+        }
+
+        kubernetesDns.validate();
+        String serviceId = uri.getHost();
+        KubernetesDnsDiscoveryProperties.requireDnsLabel(serviceId, "Kubernetes服务名");
+        int port = uri.getPort() > 0
+                ? uri.getPort()
+                : kubernetesDns.getPorts().getOrDefault(serviceId, kubernetesDns.getDefaultPort());
+        KubernetesDnsDiscoveryProperties.requirePort(port, "Kubernetes服务端口");
+        String host = serviceId + "." + kubernetesDns.getNamespace() + ".svc."
+                + kubernetesDns.getClusterDomain();
+        try {
+            return new URI("http", null, host, port, uri.getPath(), uri.getQuery(), null);
+        } catch (URISyntaxException e) {
+            throw new IllegalArgumentException("无效的Kubernetes服务路由URI: " + rawUri, e);
+        }
     }
 
     /**
@@ -146,13 +176,17 @@ public class RouteDefinitionConverter {
             List<Map<String, Object>> list = objectMapper.readValue(json,
                     new TypeReference<List<Map<String, Object>>>() {});
 
-            return list.stream()
+            List<PredicateDefinition> predicates = list.stream()
                     .map(this::toPredicateDefinition)
                     .collect(Collectors.toList());
+            if (predicates.isEmpty() || predicates.stream().anyMatch(p -> p.getName() == null || p.getName().isBlank())) {
+                throw new IllegalArgumentException("路由断言必须至少包含一个有效名称");
+            }
+            return predicates;
         } catch (JsonProcessingException e) {
             log.error("解析断言配置失败: routeId={}, json={}, error={}",
                     routeId, json, e.getMessage());
-            return Collections.emptyList();
+            throw new IllegalArgumentException("路由断言必须是有效JSON数组", e);
         }
     }
 
@@ -168,6 +202,9 @@ public class RouteDefinitionConverter {
 
         // 设置断言名称
         String name = (String) map.get("name");
+        if (name == null || name.isBlank()) {
+            throw new IllegalArgumentException("路由断言名称不能为空");
+        }
         predicate.setName(name);
 
         // 设置断言参数
@@ -204,7 +241,7 @@ public class RouteDefinitionConverter {
         } catch (JsonProcessingException e) {
             log.error("解析过滤器配置失败: routeId={}, json={}, error={}",
                     routeId, json, e.getMessage());
-            return Collections.emptyList();
+            throw new IllegalArgumentException("路由过滤器必须是有效JSON数组", e);
         }
     }
 
@@ -220,6 +257,9 @@ public class RouteDefinitionConverter {
 
         // 设置过滤器名称
         String name = (String) map.get("name");
+        if (name == null || name.isBlank()) {
+            throw new IllegalArgumentException("路由过滤器名称不能为空");
+        }
         filter.setName(name);
 
         // 设置过滤器参数
@@ -251,7 +291,7 @@ public class RouteDefinitionConverter {
         } catch (JsonProcessingException e) {
             log.error("解析元数据失败: routeId={}, json={}, error={}",
                     routeId, json, e.getMessage());
-            return Collections.emptyMap();
+            throw new IllegalArgumentException("路由元数据必须是有效JSON对象", e);
         }
     }
 

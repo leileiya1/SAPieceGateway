@@ -4,6 +4,7 @@ import com.sapiece.nova.sapiecegateway.entity.SysGatewayRoute;
 import com.sapiece.nova.sapiecegateway.repository.SysGatewayRouteRepository;
 import com.sapiece.nova.sapiecegateway.route.DatabaseRouteDefinitionRepository;
 import com.sapiece.nova.sapiecegateway.route.DynamicRouteService;
+import com.sapiece.nova.sapiecegateway.route.RouteDefinitionConverter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cloud.gateway.event.RefreshRoutesEvent;
@@ -33,6 +34,7 @@ public class DynamicRouteServiceImpl implements DynamicRouteService {
     private final ApplicationEventPublisher eventPublisher;
     private final ReactiveRedisTemplate<String, String> reactiveRedisTemplate;
     private final DatabaseRouteDefinitionRepository routeDefinitionRepository;
+    private final RouteDefinitionConverter routeDefinitionConverter;
 
     /**
      * 刷新所有路由：发布 RefreshRoutesEvent + Redis 广播（通知所有实例清空权限缓存）
@@ -72,6 +74,8 @@ public class DynamicRouteServiceImpl implements DynamicRouteService {
             route.setOrderNum(0);
         }
 
+        validateRoute(route);
+        routeDefinitionConverter.convert(route);
         return routeRepository.existsByRouteId(route.getRouteId())
                 .flatMap(exists -> {
                     if (exists) {
@@ -79,11 +83,8 @@ public class DynamicRouteServiceImpl implements DynamicRouteService {
                     }
                     return routeRepository.save(route);
                 })
-                .doOnSuccess(saved -> {
-                    log.info("新增路由成功: routeId={}, uri={}", saved.getRouteId(), saved.getUri());
-                    // 异步刷新路由
-                    refreshRoutes().subscribe();
-                })
+                .flatMap(saved -> refreshRoutes().thenReturn(saved))
+                .doOnSuccess(saved -> log.info("新增路由成功: routeId={}, uri={}", saved.getRouteId(), saved.getUri()))
                 .doOnError(error -> log.error("新增路由失败: routeId={}, error={}",
                         route.getRouteId(), error.getMessage()));
     }
@@ -93,6 +94,7 @@ public class DynamicRouteServiceImpl implements DynamicRouteService {
      */
     @Override
     public Mono<SysGatewayRoute> updateRoute(Long id, SysGatewayRoute route) {
+        validateRoutePatch(route);
         return routeRepository.findById(id)
                 .switchIfEmpty(Mono.error(new IllegalArgumentException("路由不存在: id=" + id)))
                 .flatMap(existing -> {
@@ -120,12 +122,11 @@ public class DynamicRouteServiceImpl implements DynamicRouteService {
                     existing.setUpdater(route.getUpdater());
                     existing.setUpdateTime(LocalDateTime.now());
 
+                    routeDefinitionConverter.convert(existing);
                     return routeRepository.save(existing);
                 })
-                .doOnSuccess(updated -> {
-                    log.info("更新路由成功: routeId={}, uri={}", updated.getRouteId(), updated.getUri());
-                    refreshRoutes().subscribe();
-                })
+                .flatMap(updated -> refreshRoutes().thenReturn(updated))
+                .doOnSuccess(updated -> log.info("更新路由成功: routeId={}, uri={}", updated.getRouteId(), updated.getUri()))
                 .doOnError(error -> log.error("更新路由失败: id={}, error={}", id, error.getMessage()));
     }
 
@@ -137,10 +138,8 @@ public class DynamicRouteServiceImpl implements DynamicRouteService {
         return routeRepository.findById(id)
                 .switchIfEmpty(Mono.error(new IllegalArgumentException("路由不存在: id=" + id)))
                 .flatMap(existing -> routeRepository.deleteById(id)
-                        .doOnSuccess(v -> {
-                            log.info("删除路由成功: routeId={}", existing.getRouteId());
-                            refreshRoutes().subscribe();
-                        }))
+                        .then(refreshRoutes())
+                        .doOnSuccess(v -> log.info("删除路由成功: routeId={}", existing.getRouteId())))
                 .then();
     }
 
@@ -152,10 +151,8 @@ public class DynamicRouteServiceImpl implements DynamicRouteService {
         return routeRepository.findByRouteId(routeId)
                 .switchIfEmpty(Mono.error(new IllegalArgumentException("路由不存在: routeId=" + routeId)))
                 .flatMap(existing -> routeRepository.deleteByRouteId(routeId)
-                        .doOnSuccess(count -> {
-                            log.info("删除路由成功: routeId={}, 删除数量={}", routeId, count);
-                            refreshRoutes().subscribe();
-                        }))
+                        .flatMap(count -> refreshRoutes().thenReturn(count))
+                        .doOnSuccess(count -> log.info("删除路由成功: routeId={}, 删除数量={}", routeId, count)))
                 .then();
     }
 
@@ -164,6 +161,9 @@ public class DynamicRouteServiceImpl implements DynamicRouteService {
      */
     @Override
     public Mono<SysGatewayRoute> updateStatus(Long id, Integer status) {
+        if (status == null || (status != 0 && status != 1)) {
+            return Mono.error(new IllegalArgumentException("路由状态只能是0或1"));
+        }
         return routeRepository.findById(id)
                 .switchIfEmpty(Mono.error(new IllegalArgumentException("路由不存在: id=" + id)))
                 .flatMap(existing -> {
@@ -171,10 +171,10 @@ public class DynamicRouteServiceImpl implements DynamicRouteService {
                     existing.setUpdateTime(LocalDateTime.now());
                     return routeRepository.save(existing);
                 })
+                .flatMap(updated -> refreshRoutes().thenReturn(updated))
                 .doOnSuccess(updated -> {
                     String statusText = status == 1 ? "启用" : "禁用";
                     log.info("路由状态更新: routeId={}, status={}", updated.getRouteId(), statusText);
-                    refreshRoutes().subscribe();
                 })
                 .doOnError(error -> log.error("更新路由状态失败: id={}, error={}", id, error.getMessage()));
     }
@@ -228,5 +228,56 @@ public class DynamicRouteServiceImpl implements DynamicRouteService {
     @Override
     public Mono<Long> countEnabled() {
         return routeRepository.countEnabled();
+    }
+
+    private static void validateRoute(SysGatewayRoute route) {
+        if (route == null) {
+            throw new IllegalArgumentException("路由配置不能为空");
+        }
+        if (route.getRouteId() == null || !route.getRouteId().matches("[A-Za-z0-9][A-Za-z0-9._-]{0,63}")) {
+            throw new IllegalArgumentException("路由ID格式不正确");
+        }
+        validateUri(route.getUri());
+        if (route.getPredicates() == null || route.getPredicates().isBlank()) {
+            throw new IllegalArgumentException("路由断言不能为空");
+        }
+        validateLimits(route);
+    }
+
+    private static void validateRoutePatch(SysGatewayRoute route) {
+        if (route == null) {
+            throw new IllegalArgumentException("路由配置不能为空");
+        }
+        if (route.getRouteId() != null && !route.getRouteId().matches("[A-Za-z0-9][A-Za-z0-9._-]{0,63}")) {
+            throw new IllegalArgumentException("路由ID格式不正确");
+        }
+        if (route.getUri() != null) {
+            validateUri(route.getUri());
+        }
+        if (route.getPredicates() != null && route.getPredicates().isBlank()) {
+            throw new IllegalArgumentException("路由断言不能为空");
+        }
+        validateLimits(route);
+    }
+
+    private static void validateUri(String uri) {
+        if (uri == null || !(uri.startsWith("http://") || uri.startsWith("https://") || uri.startsWith("lb://"))) {
+            throw new IllegalArgumentException("路由URI只允许http、https或lb协议");
+        }
+    }
+
+    private static void validateLimits(SysGatewayRoute route) {
+        if (route.getRateLimitQps() != null && route.getRateLimitQps() <= 0) {
+            throw new IllegalArgumentException("限流QPS必须大于0");
+        }
+        if (route.getCacheTtl() != null && route.getCacheTtl() <= 0) {
+            throw new IllegalArgumentException("缓存TTL必须大于0");
+        }
+        if (route.getRetryTimes() != null && (route.getRetryTimes() < 0 || route.getRetryTimes() > 10)) {
+            throw new IllegalArgumentException("重试次数必须在0到10之间");
+        }
+        if (route.getTimeoutMs() != null && (route.getTimeoutMs() < 100 || route.getTimeoutMs() > 300_000)) {
+            throw new IllegalArgumentException("超时时间必须在100到300000毫秒之间");
+        }
     }
 }

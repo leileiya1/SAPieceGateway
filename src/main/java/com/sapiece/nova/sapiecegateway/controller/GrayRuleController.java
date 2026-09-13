@@ -2,6 +2,7 @@ package com.sapiece.nova.sapiecegateway.controller;
 
 import com.sapiece.nova.sapiecegateway.common.Result;
 import com.sapiece.nova.sapiecegateway.entity.SysGrayRule;
+import com.sapiece.nova.sapiecegateway.exception.BusinessException;
 import com.sapiece.nova.sapiecegateway.service.GrayRuleService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -47,10 +48,6 @@ public class GrayRuleController {
                 .map(rules -> {
                     log.info("查询到灰度规则数量: {}", rules.size());
                     return Result.success("获取成功", rules);
-                })
-                .onErrorResume(e -> {
-                    log.error("获取灰度规则失败: {}", e.getMessage());
-                    return Mono.just(Result.error("获取灰度规则失败: " + e.getMessage()));
                 });
     }
 
@@ -71,10 +68,6 @@ public class GrayRuleController {
                 .map(rules -> {
                     log.info("查询到服务灰度规则数量: {}, serviceId: {}", rules.size(), serviceId);
                     return Result.success("获取成功", rules);
-                })
-                .onErrorResume(e -> {
-                    log.error("获取服务灰度规则失败, serviceId: {}, error: {}", serviceId, e.getMessage());
-                    return Mono.just(Result.error("获取灰度规则失败: " + e.getMessage()));
                 });
     }
 
@@ -95,11 +88,7 @@ public class GrayRuleController {
                     log.info("查询到灰度规则, id: {}, ruleCode: {}", id, rule.getRuleCode());
                     return Result.success("获取成功", rule);
                 })
-                .switchIfEmpty(Mono.just(Result.error("灰度规则不存在")))
-                .onErrorResume(e -> {
-                    log.error("获取灰度规则详情失败, id: {}, error: {}", id, e.getMessage());
-                    return Mono.just(Result.error("获取灰度规则失败: " + e.getMessage()));
-                });
+                .switchIfEmpty(Mono.error(new BusinessException(404, "灰度规则不存在")));
     }
 
     /**
@@ -116,29 +105,25 @@ public class GrayRuleController {
 
         // 参数校验
         if (rule.getRuleCode() == null || rule.getRuleCode().isBlank()) {
-            return Mono.just(Result.error("规则编码不能为空"));
+            throw new IllegalArgumentException("规则编码不能为空");
         }
         if (rule.getServiceId() == null || rule.getServiceId().isBlank()) {
-            return Mono.just(Result.error("服务ID不能为空"));
+            throw new IllegalArgumentException("服务ID不能为空");
         }
         if (rule.getTargetUri() == null || rule.getTargetUri().isBlank()) {
-            return Mono.just(Result.error("目标URI不能为空"));
+            throw new IllegalArgumentException("目标URI不能为空");
         }
         if (rule.getStrategyType() == null || rule.getStrategyType().isBlank()) {
-            return Mono.just(Result.error("策略类型不能为空"));
+            throw new IllegalArgumentException("策略类型不能为空");
         }
         if (rule.getStrategyConfig() == null || rule.getStrategyConfig().isBlank()) {
-            return Mono.just(Result.error("策略配置不能为空"));
+            throw new IllegalArgumentException("策略配置不能为空");
         }
 
         return grayRuleService.addRule(rule)
                 .map(saved -> {
                     log.info("灰度规则新增成功, id: {}, ruleCode: {}", saved.getId(), saved.getRuleCode());
                     return Result.success("新增成功", saved);
-                })
-                .onErrorResume(e -> {
-                    log.error("新增灰度规则失败, ruleCode: {}, error: {}", rule.getRuleCode(), e.getMessage());
-                    return Mono.just(Result.error("新增灰度规则失败: " + e.getMessage()));
                 });
     }
 
@@ -160,11 +145,7 @@ public class GrayRuleController {
                     log.info("灰度规则更新成功, id: {}, ruleCode: {}", updated.getId(), updated.getRuleCode());
                     return Result.success("更新成功", updated);
                 })
-                .switchIfEmpty(Mono.just(Result.error("灰度规则不存在")))
-                .onErrorResume(e -> {
-                    log.error("更新灰度规则失败, id: {}, error: {}", id, e.getMessage());
-                    return Mono.just(Result.error("更新灰度规则失败: " + e.getMessage()));
-                });
+                .switchIfEmpty(Mono.error(new BusinessException(404, "灰度规则不存在")));
     }
 
     /**
@@ -183,11 +164,7 @@ public class GrayRuleController {
                 .then(Mono.fromCallable(() -> {
                     log.info("灰度规则删除成功, id: {}", id);
                     return Result.<Void>success("删除成功", null);
-                }))
-                .onErrorResume(e -> {
-                    log.error("删除灰度规则失败, id: {}, error: {}", id, e.getMessage());
-                    return Mono.just(Result.error("删除灰度规则失败: " + e.getMessage()));
-                });
+                }));
     }
 
     /**
@@ -207,11 +184,7 @@ public class GrayRuleController {
                     log.info("灰度规则启用成功, id: {}, ruleCode: {}", rule.getId(), rule.getRuleCode());
                     return Result.success("启用成功", rule);
                 })
-                .switchIfEmpty(Mono.just(Result.error("灰度规则不存在")))
-                .onErrorResume(e -> {
-                    log.error("启用灰度规则失败, id: {}, error: {}", id, e.getMessage());
-                    return Mono.just(Result.error("启用灰度规则失败: " + e.getMessage()));
-                });
+                .switchIfEmpty(Mono.error(new BusinessException(404, "灰度规则不存在")));
     }
 
     /**
@@ -231,11 +204,7 @@ public class GrayRuleController {
                     log.info("灰度规则禁用成功, id: {}, ruleCode: {}", rule.getId(), rule.getRuleCode());
                     return Result.success("禁用成功", rule);
                 })
-                .switchIfEmpty(Mono.just(Result.error("灰度规则不存在")))
-                .onErrorResume(e -> {
-                    log.error("禁用灰度规则失败, id: {}, error: {}", id, e.getMessage());
-                    return Mono.just(Result.error("禁用灰度规则失败: " + e.getMessage()));
-                });
+                .switchIfEmpty(Mono.error(new BusinessException(404, "灰度规则不存在")));
     }
 
     /**
@@ -252,10 +221,6 @@ public class GrayRuleController {
                 .then(Mono.fromCallable(() -> {
                     log.info("灰度规则缓存刷新成功");
                     return Result.<Void>success("缓存刷新成功", null);
-                }))
-                .onErrorResume(e -> {
-                    log.error("刷新灰度规则缓存失败: {}", e.getMessage());
-                    return Mono.just(Result.error("缓存刷新失败: " + e.getMessage()));
-                });
+                }));
     }
 }

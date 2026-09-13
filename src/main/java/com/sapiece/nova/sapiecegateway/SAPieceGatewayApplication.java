@@ -1,6 +1,7 @@
 package com.sapiece.nova.sapiecegateway;
 
 import lombok.extern.slf4j.Slf4j;
+import org.jspecify.annotations.NonNull;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.SpringApplication;
@@ -30,7 +31,7 @@ import java.net.UnknownHostException;
  *
  * <p>技术栈：</p>
  * <ul>
- *     <li>Spring Boot 3.x</li>
+ *     <li>Spring Boot 4.x</li>
  *     <li>Spring Cloud Gateway（WebFlux响应式）</li>
  *     <li>Spring Security Reactive</li>
  *     <li>R2DBC MySQL（响应式数据库访问）</li>
@@ -46,7 +47,7 @@ import java.net.UnknownHostException;
 @SpringBootApplication
 public class SAPieceGatewayApplication {
 
-    public static void main(String[] args) {
+    static void main(String[] args) {
         log.info("====================================");
         log.info("SAPiece Gateway 正在启动...");
         log.info("====================================");
@@ -66,7 +67,7 @@ public class SAPieceGatewayApplication {
      */
     private static void printStartupInfo(Environment env) {
         String protocol = "http";
-        if (env.getProperty("server.ssl.key-store") != null) {
+        if (env.getProperty("server.ssl.enabled", Boolean.class, false)) {
             protocol = "https";
         }
 
@@ -116,7 +117,7 @@ public class SAPieceGatewayApplication {
         }
 
         @Override
-        public void run(ApplicationArguments args) {
+        public void run(@NonNull ApplicationArguments args) {
             log.info("====================================");
             log.info("应用初始化任务开始执行...");
             log.info("====================================");

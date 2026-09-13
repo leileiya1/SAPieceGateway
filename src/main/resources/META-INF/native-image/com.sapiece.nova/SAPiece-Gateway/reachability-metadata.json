@@ -1,0 +1,12 @@
+{
+  "reflection": [
+    {
+      "type": "com.sun.management.OperatingSystemMXBean",
+      "methods": [
+        {"name": "getCpuLoad", "parameterTypes": []},
+        {"name": "getProcessCpuLoad", "parameterTypes": []},
+        {"name": "getProcessCpuTime", "parameterTypes": []}
+      ]
+    }
+  ]
+}

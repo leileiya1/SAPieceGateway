@@ -15,6 +15,7 @@ import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
 
 import java.util.List;
+import java.util.UUID;
 
 /**
  * 认证信息透传 + 下游信任签名过滤器
@@ -29,7 +30,9 @@ import java.util.List;
  *
  * HMAC Header 格式：
  *   X-Gateway-Timestamp : 毫秒时间戳
- *   X-Gateway-Signature : HMAC-SHA256("timestamp={ts}&userId={uid}&path={path}")
+ *   X-Gateway-Request-Id : 每个请求唯一的随机 ID
+ *   X-Gateway-Signed-Method / X-Gateway-Signed-Path : 路由改写前的签名输入
+ *   X-Gateway-Signature : HMAC-SHA256(v2 canonical message)
  *
  * 下游服务只需共享 GATEWAY_DOWNSTREAM_SECRET 环境变量即可验证签名。
  *
@@ -55,7 +58,11 @@ public class AuthHeaderGatewayFilter implements GlobalFilter, Ordered {
             "X-User-Roles",
             "X-User-Permissions",
             "X-Gateway-Timestamp",
-            "X-Gateway-Signature"
+            "X-Gateway-Signature",
+            "X-Gateway-Signature-Version",
+            "X-Gateway-Request-Id",
+            "X-Gateway-Signed-Method",
+            "X-Gateway-Signed-Path"
     );
 
     @Override
@@ -66,6 +73,7 @@ public class AuthHeaderGatewayFilter implements GlobalFilter, Ordered {
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
         String path = exchange.getRequest().getPath().value();
+        String method = exchange.getRequest().getMethod().name();
 
         // Step 1: 剥离客户端伪造的 Header
         ServerHttpRequest stripped = exchange.getRequest().mutate()
@@ -78,9 +86,9 @@ public class AuthHeaderGatewayFilter implements GlobalFilter, Ordered {
                 .filter(auth -> isAuthenticatedUser(auth))
                 .map(auth -> {
                     CustomUserDetails user = (CustomUserDetails) auth.getPrincipal();
-                    return buildAuthenticatedRequest(stripped, user, path);
+                    return buildAuthenticatedRequest(stripped, user, method, path);
                 })
-                .defaultIfEmpty(buildUnauthenticatedRequest(stripped, path))
+                .defaultIfEmpty(buildUnauthenticatedRequest(stripped, method, path))
                 .flatMap(req -> chain.filter(exchange.mutate().request(req).build()));
     }
 
@@ -92,7 +100,7 @@ public class AuthHeaderGatewayFilter implements GlobalFilter, Ordered {
 
     /** 已认证请求：注入用户信息 + HMAC 签名 */
     private ServerHttpRequest buildAuthenticatedRequest(ServerHttpRequest request,
-                                                         CustomUserDetails user, String path) {
+                                                         CustomUserDetails user, String method, String path) {
         String userId = String.valueOf(user.getUserId());
         String roles = user.getRoles() != null ? String.join(",", user.getRoles()) : "";
         String permissions = user.getPermissions() != null ? String.join(",", user.getPermissions()) : "";
@@ -107,9 +115,7 @@ public class AuthHeaderGatewayFilter implements GlobalFilter, Ordered {
 
         if (signEnabled) {
             long ts = System.currentTimeMillis();
-            String sig = GatewaySignatureUtil.sign(signSecret, ts, userId, path);
-            builder.header("X-Gateway-Timestamp", String.valueOf(ts))
-                   .header("X-Gateway-Signature", sig);
+            addSignature(builder, ts, userId, method, path);
             log.debug("注入 HMAC 签名, ts={}, userId={}", ts, userId);
         }
 
@@ -117,14 +123,25 @@ public class AuthHeaderGatewayFilter implements GlobalFilter, Ordered {
     }
 
     /** 未认证请求（公开接口）：仅注入签名（userId=0），不注入用户信息 */
-    private ServerHttpRequest buildUnauthenticatedRequest(ServerHttpRequest request, String path) {
+    private ServerHttpRequest buildUnauthenticatedRequest(ServerHttpRequest request, String method, String path) {
         if (!signEnabled) return request;
 
         long ts = System.currentTimeMillis();
-        String sig = GatewaySignatureUtil.sign(signSecret, ts, "0", path);
-        return request.mutate()
-                .header("X-Gateway-Timestamp", String.valueOf(ts))
-                .header("X-Gateway-Signature", sig)
-                .build();
+        ServerHttpRequest.Builder builder = request.mutate();
+        addSignature(builder, ts, "0", method, path);
+        return builder.build();
+    }
+
+    private void addSignature(ServerHttpRequest.Builder builder, long timestamp, String userId,
+                              String method, String path) {
+        String requestId = UUID.randomUUID().toString();
+        String signature = GatewaySignatureUtil.sign(
+                signSecret, timestamp, userId, method, path, requestId);
+        builder.header("X-Gateway-Timestamp", String.valueOf(timestamp))
+                .header("X-Gateway-Signature-Version", "v2")
+                .header("X-Gateway-Request-Id", requestId)
+                .header("X-Gateway-Signed-Method", method)
+                .header("X-Gateway-Signed-Path", path)
+                .header("X-Gateway-Signature", signature);
     }
 }

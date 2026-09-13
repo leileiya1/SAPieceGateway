@@ -121,7 +121,7 @@ public class JwtSecurityContextRepository implements ServerSecurityContextReposi
                     .flatMap(blacklisted -> {
                         if (blacklisted) {
                             log.warn("【JWT认证】Token已在黑名单中, path: {}", path);
-                            return Mono.<SecurityContext>empty();
+                            return Mono.<Boolean>empty();
                         }
                         return tokenBlacklistService.isUserBlacklisted(userId);
                     })
@@ -190,6 +190,10 @@ public class JwtSecurityContextRepository implements ServerSecurityContextReposi
     private Mono<SecurityContext> buildContextFromDb(Long userId, String token, String path) {
         return userDetailsService.findByUserId(userId)
                 .flatMap(userDetails -> {
+                    if (!userDetails.isEnabled() || !userDetails.isAccountNonLocked()
+                            || !userDetails.isAccountNonExpired() || !userDetails.isCredentialsNonExpired()) {
+                        return Mono.<SecurityContext>empty();
+                    }
                     if (userDetails instanceof CustomUserDetails cd) {
                         if (jwtUtil.isTokenIssuedBeforePasswordChange(token, cd.getPasswordLastChangedAt())) {
                             log.warn("【JWT认证】(DB降级)Token在密码修改前签发，已失效, userId: {}", userId);

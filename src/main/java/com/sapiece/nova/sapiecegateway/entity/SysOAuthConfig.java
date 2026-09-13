@@ -1,5 +1,6 @@
 package com.sapiece.nova.sapiecegateway.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -56,6 +57,7 @@ public class SysOAuthConfig {
      * 客户端密钥（加密存储）
      */
     @Column("client_secret")
+    @JsonIgnore
     private String clientSecret;
 
     /**

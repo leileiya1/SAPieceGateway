@@ -5,7 +5,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>4.0.5</version>
+        <version>4.0.8</version>
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
     <groupId>com.sapiece.nova</groupId>
@@ -27,9 +27,11 @@
         <url/>
     </scm>
     <properties>
-        <java.version>21</java.version>
-        <spring-cloud.version>2025.1.0</spring-cloud.version>
+        <java.version>26</java.version>
+        <lombok.version>1.18.48</lombok.version>
+        <spring-cloud.version>2025.1.3</spring-cloud.version>
         <spring-cloud-alibaba.version>2025.1.0.0</spring-cloud-alibaba.version>
+        <native.build.cpus>16</native.build.cpus>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.encoding>${project.build.sourceEncoding}</maven.compiler.encoding>
     </properties>
@@ -42,18 +44,6 @@
         <dependency>
             <groupId>io.micrometer</groupId>
             <artifactId>micrometer-registry-prometheus</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-actuator</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-actuator-autoconfigure</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-health</artifactId>
         </dependency>
         <!-- Logstash 日志编码器（JSON格式日志） -->
         <dependency>
@@ -123,8 +113,6 @@
             <groupId>org.aspectj</groupId>
             <artifactId>aspectjweaver</artifactId>
         </dependency>
-
-
         <!-- Hutool 工具类 -->
         <dependency>
             <groupId>cn.hutool</groupId>
@@ -139,22 +127,6 @@
             <artifactId>spring-boot-starter-opentelemetry</artifactId>
         </dependency>
 
-        <!-- ===== Spring Cloud Alibaba ===== -->
-        <!-- Nacos 服务发现 -->
-        <dependency>
-            <groupId>com.alibaba.cloud</groupId>
-            <artifactId>spring-cloud-starter-alibaba-nacos-discovery</artifactId>
-        </dependency>
-        <!-- Nacos 配置中心 -->
-        <dependency>
-            <groupId>com.alibaba.cloud</groupId>
-            <artifactId>spring-cloud-starter-alibaba-nacos-config</artifactId>
-        </dependency>
-        <!-- Spring Cloud LoadBalancer（lb:// 路由方案） -->
-        <dependency>
-            <groupId>org.springframework.cloud</groupId>
-            <artifactId>spring-cloud-starter-loadbalancer</artifactId>
-        </dependency>
         <!-- Sentinel 熔断降级 -->
         <dependency>
             <groupId>com.alibaba.cloud</groupId>
@@ -165,17 +137,11 @@
             <groupId>com.alibaba.csp</groupId>
             <artifactId>sentinel-spring-cloud-gateway-v6x-adapter</artifactId>
         </dependency>
-        <!-- Sentinel Nacos 数据源（持久化规则） -->
-        <dependency>
-            <groupId>com.alibaba.csp</groupId>
-            <artifactId>sentinel-datasource-nacos</artifactId>
-        </dependency>
-
         <!-- Knife4j API Documentation -->
         <dependency>
-            <groupId>com.github.xiaoymin</groupId>
-            <artifactId>knife4j-openapi3-jakarta-spring-boot-starter</artifactId>
-            <version>4.4.0</version>
+            <groupId>org.springdoc</groupId>
+            <artifactId>springdoc-openapi-starter-webflux-ui</artifactId>
+            <version>3.0.3</version>
         </dependency>
 
         <!-- 测试依赖 -->
@@ -197,6 +163,16 @@
     </dependencies>
     <dependencyManagement>
         <dependencies>
+            <dependency>
+                <groupId>com.alibaba.fastjson2</groupId>
+                <artifactId>fastjson2</artifactId>
+                <version>2.0.65</version>
+            </dependency>
+            <dependency>
+                <groupId>com.alibaba</groupId>
+                <artifactId>fastjson</artifactId>
+                <version>2.0.65</version>
+            </dependency>
             <dependency>
                 <groupId>org.springframework.cloud</groupId>
                 <artifactId>spring-cloud-dependencies</artifactId>
@@ -220,8 +196,14 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <configuration>
-                    <source>${java.version}</source>
-                    <target>${java.version}</target>
+                    <release>${java.version}</release>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                            <version>${lombok.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
                     <encoding>${project.build.sourceEncoding}</encoding>
                 </configuration>
             </plugin>
@@ -232,4 +214,36 @@
         </plugins>
     </build>
 
+    <profiles>
+        <!-- GraalVM currently targets Java 25; local JVM development uses JDK 26. -->
+        <profile>
+            <id>native</id>
+            <properties><java.version>25</java.version></properties>
+            <build><plugins>
+                <plugin>
+                    <groupId>org.graalvm.buildtools</groupId>
+                    <artifactId>native-maven-plugin</artifactId>
+                    <configuration>
+                        <imageName>sapiece-gateway</imageName>
+                        <buildArgs>
+                            <buildArg>--no-fallback</buildArg>
+                            <buildArg>-march=compatibility</buildArg>
+                            <buildArg>-J-Xmx12g</buildArg>
+                            <buildArg>-J-XX:ActiveProcessorCount=${native.build.cpus}</buildArg>
+                            <!-- Upstream Fastjson build-time caches capture JDK internals; construct them at runtime. -->
+                            <buildArg>--exclude-config</buildArg>
+                            <buildArg>.*fastjson.*[.]jar</buildArg>
+                            <buildArg>.*native-image[.]properties</buildArg>
+                            <buildArg>--initialize-at-run-time=com.alibaba.fastjson2,com.alibaba.fastjson</buildArg>
+                        </buildArgs>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-maven-plugin</artifactId>
+                    <configuration><profiles><profile>prod</profile></profiles></configuration>
+                </plugin>
+            </plugins></build>
+        </profile>
+    </profiles>
 </project>

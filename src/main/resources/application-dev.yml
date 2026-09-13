@@ -1,44 +1,11 @@
-# 开发环境配置
+# 本机 JDK 26 开发；数据库和密钥通过环境变量注入。
 spring:
-  application:
-    name: sapiece-gateway
-
-  # R2DBC 数据库配置
   r2dbc:
-    url: r2dbc:mysql://10.70.239.17:3306/product_test?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai
-    username: sapiece
-    password: 159357
     pool:
-      initial-size: 5
-      max-size: 20
-
-  # Redis 配置
-  data:
-    redis:
-      host: 10.70.239.17
-      port: 6379
-      password:
-      database: 0
-
-# JWT 配置
-jwt:
-  secret: SAPiece-Gateway-Dev-Secret-Key-2025
-  expiration: 604800000  # 7天
-  refresh: 259200000     # 3天
-
-# 限流配置（开发环境放宽限制）
-rate-limit:
-  enabled: true
-  qps: 100              # 开发环境100 QPS
-  capacity: 200
-
-# 日志配置（开发环境详细日志）
+      initial-size: 1
+      max-size: 10
 logging:
   level:
-    root: INFO
     com.sapiece.nova.sapiecegateway: DEBUG
-    org.springframework.r2dbc: DEBUG
-    org.springframework.security: DEBUG
-
 server:
-  port: 8080
+  port: ${SERVER_PORT:8080}

@@ -10,6 +10,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * 优雅停机处理器
@@ -41,11 +42,7 @@ public class GracefulShutdownHandler implements ApplicationListener<ContextClose
      */
     private final AtomicBoolean isShuttingDown = new AtomicBoolean(false);
 
-    /**
-     * 当前进行中的请求数
-     * 注：在实际生产环境中，这个计数器应该在 MetricsFilter 中维护
-     */
-    private final AtomicBoolean hasInFlightRequests = new AtomicBoolean(true);
+    private final AtomicInteger inFlightRequests = new AtomicInteger();
 
     /**
      * 处理应用关闭事件
@@ -92,17 +89,11 @@ public class GracefulShutdownHandler implements ApplicationListener<ContextClose
     private void waitForInFlightRequests() {
         log.info("等待进行中的请求完成...");
 
-        int maxWaitSeconds = 30;
-        int waitedSeconds = 0;
+        long deadline = System.nanoTime() + Duration.ofSeconds(25).toNanos();
 
-        while (hasInFlightRequests.get() && waitedSeconds < maxWaitSeconds) {
+        while (inFlightRequests.get() > 0 && System.nanoTime() < deadline) {
             try {
-                Thread.sleep(1000);
-                waitedSeconds++;
-
-                if (waitedSeconds % 5 == 0) {
-                    log.info("已等待 {} 秒，继续等待请求完成...", waitedSeconds);
-                }
+                Thread.sleep(100);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 log.warn("等待请求完成时被中断");
@@ -110,8 +101,9 @@ public class GracefulShutdownHandler implements ApplicationListener<ContextClose
             }
         }
 
-        if (waitedSeconds >= maxWaitSeconds) {
-            log.warn("等待超时（{}秒），强制继续关闭流程", maxWaitSeconds);
+        int remaining = inFlightRequests.get();
+        if (remaining > 0) {
+            log.warn("等待在途请求超时，仍有 {} 个请求，继续关闭", remaining);
         } else {
             log.info("所有进行中的请求已完成");
         }
@@ -197,5 +189,17 @@ public class GracefulShutdownHandler implements ApplicationListener<ContextClose
      */
     public boolean isShuttingDown() {
         return isShuttingDown.get();
+    }
+
+    public void requestStarted() {
+        inFlightRequests.incrementAndGet();
+    }
+
+    public void requestFinished() {
+        inFlightRequests.updateAndGet(current -> Math.max(0, current - 1));
+    }
+
+    int inFlightRequestCount() {
+        return inFlightRequests.get();
     }
 }

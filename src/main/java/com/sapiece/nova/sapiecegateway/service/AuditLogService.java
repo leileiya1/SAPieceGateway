@@ -1,6 +1,7 @@
 package com.sapiece.nova.sapiecegateway.service;
 
 import com.sapiece.nova.sapiecegateway.entity.SysAuditLog;
+import com.sapiece.nova.sapiecegateway.dto.AuditLogSearchCriteria;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -129,6 +130,8 @@ public interface AuditLogService {
      * @return 审计日志列表
      */
     Flux<SysAuditLog> getByTimeRange(LocalDateTime startTime, LocalDateTime endTime);
+
+    Flux<SysAuditLog> search(AuditLogSearchCriteria criteria);
 
     /**
      * 查询用户最近的登录记录

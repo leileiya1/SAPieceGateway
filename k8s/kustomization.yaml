@@ -1,0 +1,14 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - middleware.yaml
+  - service.yaml
+  - pdb.yaml
+  - deployment.yaml
+  - hpa.yaml
+  - grpc-demo.yaml
+  - grpc-hpa.yaml
+  - grpc-network-policy.yaml
+  - observability.yaml

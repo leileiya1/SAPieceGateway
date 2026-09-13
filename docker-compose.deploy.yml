@@ -1,0 +1,38 @@
+# Reuses the existing MySQL/Redis containers on ubuntu-server.
+services:
+  gateway:
+    image: sapiece-gateway:native
+    container_name: sapiece-gateway-native
+    restart: unless-stopped
+    ports:
+      - "${GATEWAY_BIND_ADDRESS:-127.0.0.1}:${GATEWAY_PORT:-8096}:8080"
+    env_file: .env
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SERVER_PORT: 8080
+      # Docker fallback has no Kubernetes Service DNS; use direct http(s) routes.
+      KUBERNETES_DNS_DISCOVERY_ENABLED: 'false'
+      SPRING_CLOUD_SENTINEL_ENABLED: 'false'
+    networks: [middleware]
+    volumes:
+      - gateway-logs:/app/logs
+    command: ["-Xmx512m"]
+    read_only: true
+    tmpfs:
+      - /tmp:exec,uid=10001,gid=10001,mode=1777
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 1g
+    stop_grace_period: 40s
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent http://127.0.0.1:8080/actuator/health/readiness >/dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+networks:
+  middleware:
+    external: true
+    name: middleware-net
+volumes:
+  gateway-logs:

@@ -5,129 +5,117 @@ metadata:
   namespace: sapiece
   labels:
     app: sapiece-gateway
-    version: "1.0"
 spec:
-  replicas: 2                    # 初始 2 副本（HPA 按需扩缩）
+  replicas: 2
   selector:
     matchLabels:
       app: sapiece-gateway
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      maxSurge: 1                # 滚动升级时最多多 1 个 Pod
-      maxUnavailable: 0          # 保持零宕机（需要 replicas >= 2）
+      # With two nodes, surging a third Pod can leave both replacement Pods on
+      # the same node after the old replica terminates. Releasing one replica
+      # first lets the hard topology constraint keep one Gateway per node.
+      maxSurge: 0
+      maxUnavailable: 1
   template:
     metadata:
       labels:
         app: sapiece-gateway
-        version: "1.0"
       annotations:
         prometheus.io/scrape: "true"
         prometheus.io/path: "/actuator/prometheus"
         prometheus.io/port: "8080"
     spec:
-      # ── 安全上下文 ──────────────────────────────────────────────────────
       securityContext:
         runAsNonRoot: true
-        runAsUser: 1000
-        fsGroup: 1000
-      # ── 优雅终止 ────────────────────────────────────────────────────────
-      terminationGracePeriodSeconds: 40    # 与 server.lifecycle.timeout-per-shutdown-phase 一致
-      # ── 容器 ────────────────────────────────────────────────────────────
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+      terminationGracePeriodSeconds: 40
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: sapiece-gateway
       containers:
         - name: gateway
-          image: sapiece-gateway:latest    # 替换为你的 Registry 地址
-          imagePullPolicy: Always
+          image: sapiece-gateway:native-k3s-v6
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
           ports:
             - name: http
               containerPort: 8080
-            - name: https
-              containerPort: 8443
-          # ── 环境变量：非敏感 ────────────────────────────────────────────
           envFrom:
             - configMapRef:
                 name: sapiece-gateway-config
-          # ── 环境变量：敏感（从 Secret 注入） ────────────────────────────
           env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
             - name: SPRING_R2DBC_URL
               valueFrom:
-                secretKeyRef:
-                  name: sapiece-gateway-secret
-                  key: DB_URL
+                secretKeyRef: {name: sapiece-gateway-secret, key: DB_URL}
             - name: SPRING_R2DBC_USERNAME
               valueFrom:
-                secretKeyRef:
-                  name: sapiece-gateway-secret
-                  key: DB_USERNAME
+                secretKeyRef: {name: sapiece-gateway-secret, key: DB_USERNAME}
             - name: SPRING_R2DBC_PASSWORD
               valueFrom:
-                secretKeyRef:
-                  name: sapiece-gateway-secret
-                  key: DB_PASSWORD
+                secretKeyRef: {name: sapiece-gateway-secret, key: DB_PASSWORD}
             - name: SPRING_DATA_REDIS_HOST
               valueFrom:
-                secretKeyRef:
-                  name: sapiece-gateway-secret
-                  key: REDIS_HOST
+                secretKeyRef: {name: sapiece-gateway-secret, key: REDIS_HOST}
+            - name: SPRING_DATA_REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: sapiece-gateway-secret, key: REDIS_PASSWORD}
             - name: JWT_SECRET
               valueFrom:
-                secretKeyRef:
-                  name: sapiece-gateway-secret
-                  key: JWT_SECRET
+                secretKeyRef: {name: sapiece-gateway-secret, key: JWT_SECRET}
             - name: GATEWAY_DOWNSTREAM_SECRET
               valueFrom:
-                secretKeyRef:
-                  name: sapiece-gateway-secret
-                  key: GATEWAY_DOWNSTREAM_SECRET
-            - name: SPRING_CLOUD_NACOS_DISCOVERY_PASSWORD
+                secretKeyRef: {name: sapiece-gateway-secret, key: GATEWAY_DOWNSTREAM_SECRET}
+            - name: OAUTH_ENCRYPTION_KEY
               valueFrom:
-                secretKeyRef:
-                  name: sapiece-gateway-secret
-                  key: NACOS_PASSWORD
-            - name: SPRING_CLOUD_NACOS_CONFIG_PASSWORD
+                secretKeyRef: {name: sapiece-gateway-secret, key: OAUTH_ENCRYPTION_KEY}
+            - name: OAUTH_ALLOWED_HOSTS
               valueFrom:
-                secretKeyRef:
-                  name: sapiece-gateway-secret
-                  key: NACOS_PASSWORD
-          # ── 资源限制 ────────────────────────────────────────────────────
+                secretKeyRef: {name: sapiece-gateway-secret, key: OAUTH_ALLOWED_HOSTS}
+            - name: CORS_ALLOWED_ORIGINS
+              valueFrom:
+                secretKeyRef: {name: sapiece-gateway-secret, key: CORS_ALLOWED_ORIGINS}
+            - name: SIGNATURE_SECRET
+              valueFrom:
+                secretKeyRef: {name: sapiece-gateway-secret, key: SIGNATURE_SECRET}
           resources:
-            requests:
-              cpu: "250m"
-              memory: "512Mi"
-            limits:
-              cpu: "1000m"
-              memory: "1Gi"
-          # ── 健康探针 ────────────────────────────────────────────────────
-          # Startup Probe：等待应用初始化完成（Nacos 注册 + 路由加载）
+            requests: {cpu: "250m", memory: "256Mi"}
+            limits: {cpu: "1000m", memory: "768Mi"}
           startupProbe:
-            httpGet:
-              path: /actuator/health/liveness
-              port: 8080
-            initialDelaySeconds: 10
+            httpGet: {path: /health, port: http}
             periodSeconds: 5
-            failureThreshold: 12    # 最多等 60s（10 + 12×5）
-          # Liveness Probe：检测应用是否卡死，失败则重启
+            failureThreshold: 18
+            timeoutSeconds: 3
           livenessProbe:
-            httpGet:
-              path: /actuator/health/liveness
-              port: 8080
-            initialDelaySeconds: 0
+            httpGet: {path: /health, port: http}
             periodSeconds: 15
             failureThreshold: 3
-            timeoutSeconds: 5
-          # Readiness Probe：检测应用是否就绪接收流量，失败则从 Service 摘除
+            timeoutSeconds: 3
           readinessProbe:
-            httpGet:
-              path: /actuator/health/readiness
-              port: 8080
-            initialDelaySeconds: 0
-            periodSeconds: 10
+            httpGet: {path: /health, port: http}
+            periodSeconds: 5
             failureThreshold: 3
-            timeoutSeconds: 5
-          # ── 日志卷 ──────────────────────────────────────────────────────
+            timeoutSeconds: 3
           volumeMounts:
-            - name: logs
-              mountPath: /app/logs
+            - {name: logs, mountPath: /app/logs}
+            - {name: tmp, mountPath: /tmp}
       volumes:
         - name: logs
-          emptyDir: {}    # 生产替换为 PVC
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}

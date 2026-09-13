@@ -1,0 +1,83 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: sapiece-gateway-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: sapiece_gateway
+      MYSQL_USER: gateway_native
+      MYSQL_PASSWORD: ${DB_PASSWORD:?Set in .env}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set in .env}
+      TZ: Asia/Shanghai
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_0900_ai_ci"]
+    networks: [gateway-middleware]
+    volumes:
+      - gateway-mysql-data:/var/lib/mysql
+      - ./sql/schema-native.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_ROOT_PASSWORD mysqladmin ping -h 127.0.0.1 -uroot --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  redis:
+    image: redis:7.4-alpine
+    container_name: sapiece-gateway-redis
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set in .env}
+    command: ["sh", "-c", "exec redis-server --appendonly yes --requirepass \"$$REDIS_PASSWORD\""]
+    networks: [gateway-middleware]
+    volumes:
+      - gateway-redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$$REDIS_PASSWORD redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  gateway:
+    image: sapiece-gateway:native
+    container_name: sapiece-gateway-native
+    restart: unless-stopped
+    depends_on:
+      mysql: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    ports:
+      - "${GATEWAY_BIND_ADDRESS:-127.0.0.1}:${GATEWAY_PORT:-8096}:8080"
+    env_file: .env
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      SERVER_PORT: 8080
+      DB_URL: r2dbc:mysql://mysql:3306/sapiece_gateway
+      DB_USERNAME: gateway_native
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      KUBERNETES_DNS_DISCOVERY_ENABLED: "false"
+      SPRING_CLOUD_SENTINEL_ENABLED: "false"
+    command: ["-Xmx512m"]
+    networks: [gateway-middleware]
+    volumes:
+      - gateway-logs:/app/logs
+    read_only: true
+    tmpfs: ["/tmp:exec,uid=10001,gid=10001,mode=1777"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 1g
+    stop_grace_period: 40s
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent http://127.0.0.1:8080/actuator/health/readiness >/dev/null"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 30s
+
+networks:
+  gateway-middleware:
+    name: sapiece-gateway-middleware
+
+volumes:
+  gateway-mysql-data:
+  gateway-redis-data:
+  gateway-logs:

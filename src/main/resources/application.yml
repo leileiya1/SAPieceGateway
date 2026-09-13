@@ -9,10 +9,6 @@ spring:
       - org.springframework.cloud.autoconfigure.LifecycleMvcEndpointAutoConfiguration
       - org.springframework.cloud.autoconfigure.WritableEnvironmentEndpointAutoConfiguration
 
-  # Nacos 配置中心（optional: 前缀表示 Nacos 不可用时仍正常启动）
-  config:
-    import: "optional:nacos:${spring.application.name}.yaml"
-
   # 优雅停机配置
   lifecycle:
     timeout-per-shutdown-phase: 30s  # 每个停机阶段的超时时间
@@ -21,9 +17,9 @@ spring:
   # 生产环境：请通过环境变量注入凭据，例如：
   #   password: ${DB_PASSWORD}
   r2dbc:
-    url: r2dbc:mysql://10.70.239.17:3306/product_test?useUnicode=true&characterEncoding=utf8&useSSL=false&serverTimezone=Asia/Shanghai
-    username: sapiece
-    password: 159357
+    url: ${DB_URL:r2dbc:mysql://localhost:3306/sapiece_gateway}
+    username: ${DB_USERNAME:gateway}
+    password: ${DB_PASSWORD:}
     pool:
       initial-size: 10        # 初始连接池大小
       max-size: 50           # 最大连接池大小
@@ -32,9 +28,9 @@ spring:
   # Redis 响应式配置（用于限流和缓存）
   data:
     redis:
-      host: 10.70.239.17
+      host: ${REDIS_HOST:localhost}
       port: 6379
-      password:
+      password: ${REDIS_PASSWORD:}
       database: 0
       timeout: 3000ms
       lettuce:
@@ -44,60 +40,14 @@ spring:
           min-idle: 5        # 最小空闲连接数
           max-wait: 3000ms   # 最大等待时间
 
-  # Spring Cloud Alibaba — Nacos
   cloud:
-    nacos:
-      # 服务注册发现
-      discovery:
-        server-addr: 10.70.239.17:8848
-        username: nacos
-        password: nacos
-        namespace: public          # 命名空间，默认 public
-        group: DEFAULT_GROUP
-        register-enabled: true     # 网关本身也注册到 Nacos，供其他服务发现
-        heart-beat-interval: 5000
-        heart-beat-timeout: 15000
-        ip: 127.0.0.1              # 显式指定注册 IP，避免 macOS 下 hostname 解析超时
-      # 配置中心
-      config:
-        server-addr: 10.70.239.17:8848
-        username: nacos
-        password: nacos
-        namespace: public
-        group: DEFAULT_GROUP
-        file-extension: yaml
-        refresh-enabled: true      # 开启动态刷新（需要 @RefreshScope）
-
     # Sentinel 熔断降级
     sentinel:
       transport:
-        dashboard: localhost:8080   # Sentinel Dashboard 地址（部署后修改）
+        dashboard: ${SENTINEL_DASHBOARD:}   # Sentinel Dashboard 地址（部署后修改）
         port: 8719                  # Sentinel 与 Dashboard 通信端口
-      eager: true                   # 应用启动时即连接 Dashboard
+      eager: false                   # 应用启动时即连接 Dashboard
       web-context-unify: false      # Gateway 场景需关闭 Web 上下文统一
-      # Nacos 持久化规则数据源
-      datasource:
-        degrade:
-          nacos:
-            server-addr: 10.70.239.17:8848
-            username: nacos
-            password: nacos
-            namespace: public
-            group-id: SENTINEL_GROUP
-            data-id: ${spring.application.name}-degrade-rules
-            data-type: json
-            rule-type: degrade
-        flow:
-          nacos:
-            server-addr: 10.70.239.17:8848
-            username: nacos
-            password: nacos
-            namespace: public
-            group-id: SENTINEL_GROUP
-            data-id: ${spring.application.name}-flow-rules
-            data-type: json
-            rule-type: flow
-
     # Spring Cloud Gateway 配置
     gateway:
       # WebFlux 服务器配置 (Spring Cloud Gateway 2025.x 新结构)
@@ -120,15 +70,6 @@ spring:
           # 注意：生产环境请将 allowed-origin-patterns 改为具体域名（如 https://yourdomain.com）
           # 使用 allowedOriginPatterns("*") + allow-credentials: true 是 Spring 特有的安全机制，
           # 会在响应时动态替换为请求的实际 Origin，但仍属于高风险配置，请谨慎用于生产。
-          globalcors:
-            cors-configurations:
-              '[/**]':
-                allowed-origin-patterns: "*"
-                allowed-methods: "*"
-                allowed-headers: "*"
-                allow-credentials: true
-                max-age: 3600
-
           # 全局默认过滤器
           default-filters:
             - AddRequestHeader=X-Gateway-Name, SAPiece-Gateway
@@ -138,7 +79,7 @@ spring:
 #   export JWT_SECRET=<your-256bit-secret>
 #   然后配置：secret: ${JWT_SECRET}
 jwt:
-  secret: SAPiece-Gateway-Secret-Key-2025-For-Authentication-And-Authorization-Security
+  secret: ${JWT_SECRET}
   # 旧配置（保留兼容性）
   expiration: 604800000
   refresh: 259200000
@@ -191,15 +132,22 @@ ip-filter:
 # 参数签名验证配置（客户端 → 网关）
 signature:
   enabled: false                              # 是否启用签名验证
-  secret: SAPiece-Signature-Secret-Key-2025  # 签名密钥（生产环境建议通过环境变量注入）
-  algorithm: MD5                              # 签名算法（MD5、SHA256）
+  secret: ${SIGNATURE_SECRET:}                # 启用签名验证前必须注入独立密钥
+  algorithm: SHA256                           # 兼容 MD5，但新部署统一使用 SHA256
   timestamp-validity: 300                     # 时间戳有效期（秒），默认5分钟
 
 # 网关 → 下游服务 HMAC 签名配置（防止下游被绕过网关直接访问）
 gateway:
+  # lb://service-name 保持兼容，解析为 Kubernetes Service DNS；实际健康
+  # EndpointSlice 和负载均衡由 K3s 维护，无需 Nacos 或 Kubernetes Java SDK。
+  kubernetes-dns:
+    enabled: ${KUBERNETES_DNS_DISCOVERY_ENABLED:false}
+    namespace: ${POD_NAMESPACE:default}
+    cluster-domain: ${KUBERNETES_CLUSTER_DOMAIN:cluster.local}
+    default-port: ${KUBERNETES_SERVICE_DEFAULT_PORT:80}
   downstream-sign:
     enabled: true
-    secret: ${GATEWAY_DOWNSTREAM_SECRET:SAPiece-Gateway-Downstream-HMAC-Secret-2026}
+    secret: ${GATEWAY_DOWNSTREAM_SECRET}
     timestamp-validity-ms: 30000             # 时间戳有效期 30s（防重放）
 
 # 响应缓存配置
@@ -229,6 +177,8 @@ audit:
 oauth2:
   enabled: true                                # 是否启用OAuth2登录
   base-redirect-uri: http://localhost:8080/auth/oauth2/callback  # 回调地址基础路径
+  encryption-key: ${OAUTH_ENCRYPTION_KEY:}
+  allowed-hosts: ${OAUTH_ALLOWED_HOSTS:}
 
 # OTLP 导出配置（指向 Jaeger / 任意 OTLP 接收器）
 otel:
@@ -251,7 +201,7 @@ server:
   ssl:
     enabled: ${SSL_ENABLED:false}                          # 通过环境变量启用；docker-compose/K8s 中设为 true
     key-store: ${SSL_KEY_STORE:classpath:ssl/gateway.p12}  # PKCS12 证书路径
-    key-store-password: ${SSL_KEY_STORE_PASSWORD:changeit}
+    key-store-password: ${SSL_KEY_STORE_PASSWORD:}
     key-store-type: PKCS12
     key-alias: gateway
   # 同时监听 8443（HTTPS）- 需要 WebServerFactoryCustomizer
@@ -277,13 +227,25 @@ logging:
 
 # Actuator 监控 + 链路追踪配置
 management:
+  server:
+    port: ${MANAGEMENT_SERVER_PORT:${SERVER_PORT:8080}}
   endpoints:
     web:
       exposure:
         include: health,info,metrics,prometheus
   endpoint:
     health:
-      show-details: always
+      show-details: when-authorized
+      roles: ADMIN
+      probes:
+        enabled: true
+      group:
+        readiness:
+          include: readinessState,redis,r2dbc,shutdown
+  otlp:
+    metrics:
+      export:
+        enabled: ${OTLP_METRICS_EXPORT_ENABLED:false}
   metrics:
     export:
       prometheus:
@@ -292,7 +254,7 @@ management:
   tracing:
     enabled: true
     sampling:
-      probability: 1.0    # 开发环境全采样；生产建议 0.1~0.2
+      probability: ${TRACING_SAMPLING_PROBABILITY:0.1}    # 开发环境全采样；生产建议 0.1~0.2
 
 # 应用信息
 info:
@@ -301,3 +263,7 @@ info:
     description: 基于WebFlux的响应式API网关，支持JWT认证、权限控制、接口限流、日志记录等功能
     version: 1.0.0
     author: SAPiece
+
+# 使用明确的前端地址；逗号分隔，默认不允许跨域。
+gateway-cors:
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:}

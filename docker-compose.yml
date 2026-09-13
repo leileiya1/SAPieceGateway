@@ -2,7 +2,7 @@
 #
 # 架构：
 #   nginx (80/443) → gateway-1 (8080) ┐
-#                  → gateway-2 (8081) ┘ → MySQL + Redis + Nacos
+#                  → gateway-2 (8081) ┘ → MySQL + Redis
 #
 # 可观测性：Jaeger (链路追踪) + Prometheus (指标) + Grafana (看板)
 #
@@ -27,21 +27,18 @@ services:
     environment:
       SPRING_PROFILES_ACTIVE: prod
       # 数据库（生产替换为真实地址）
-      SPRING_R2DBC_URL: r2dbc:mysql://${DB_HOST:-10.70.239.17}:3306/product_test?useSSL=false&serverTimezone=Asia/Shanghai
-      SPRING_R2DBC_USERNAME: ${DB_USER:-sapiece}
-      SPRING_R2DBC_PASSWORD: ${DB_PASSWORD:-159357}
+      SPRING_R2DBC_URL: ${DB_URL:?Set DB_URL in .env}
+      SPRING_R2DBC_USERNAME: ${DB_USER:?Set DB_USER in .env}
+      SPRING_R2DBC_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
       # Redis
       SPRING_DATA_REDIS_HOST: ${REDIS_HOST:-10.70.239.17}
       SPRING_DATA_REDIS_PORT: 6379
-      # Nacos
-      SPRING_CLOUD_NACOS_DISCOVERY_SERVER_ADDR: ${NACOS_HOST:-10.70.239.17}:8848
-      SPRING_CLOUD_NACOS_DISCOVERY_USERNAME: nacos
-      SPRING_CLOUD_NACOS_DISCOVERY_PASSWORD: nacos
-      SPRING_CLOUD_NACOS_CONFIG_SERVER_ADDR: ${NACOS_HOST:-10.70.239.17}:8848
+      # Compose fallback uses direct http(s) routes; K3s enables Service DNS discovery.
+      KUBERNETES_DNS_DISCOVERY_ENABLED: "false"
       # JWT
-      JWT_SECRET: ${JWT_SECRET:-SAPiece-Gateway-Secret-Key-2025-For-Authentication}
+      JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in .env}
       # 下游签名
-      GATEWAY_DOWNSTREAM_SECRET: ${GATEWAY_DOWNSTREAM_SECRET:-change-me-in-production}
+      GATEWAY_DOWNSTREAM_SECRET: ${GATEWAY_DOWNSTREAM_SECRET:?Set GATEWAY_DOWNSTREAM_SECRET in .env}
       # OTel → Jaeger
       OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317
       OTEL_SERVICE_NAME: sapiece-gateway
@@ -55,7 +52,7 @@ services:
     volumes:
       - gateway-logs:/app/logs
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:8080/actuator/health"]
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8080/actuator/health/readiness"]
       interval: 15s
       timeout: 5s
       retries: 3
@@ -115,7 +112,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin123}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?Set GRAFANA_PASSWORD in .env}
       GF_USERS_ALLOW_SIGN_UP: "false"
     volumes:
       - grafana-data:/var/lib/grafana

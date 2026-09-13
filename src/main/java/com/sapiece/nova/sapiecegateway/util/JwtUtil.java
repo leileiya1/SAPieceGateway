@@ -13,7 +13,6 @@ import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.Date;
-import java.util.List;
 import java.util.Map;
 
 /**
@@ -30,7 +29,7 @@ public class JwtUtil {
     /**
      * JWT密钥（从配置文件读取）
      */
-    @Value("${jwt.secret:SAPiece-Gateway-Secret-Key-2025-For-Authentication-And-Authorization-Security}")
+    @Value("${jwt.secret}")
     private String secret;
 
     /**
@@ -204,8 +203,8 @@ public class JwtUtil {
             // 兼容旧Token（没有tokenType字段的视为access token）
             return tokenType != null ? tokenType : TOKEN_TYPE_ACCESS;
         } catch (Exception e) {
-            log.error("获取Token类型失败, error: {}", e.getMessage());
-            return TOKEN_TYPE_ACCESS;
+            log.debug("获取Token类型失败: {}", e.getMessage());
+            return null;
         }
     }
 

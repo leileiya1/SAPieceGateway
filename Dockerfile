@@ -1,53 +1,27 @@
-# ============================================================
-# SAPiece Gateway — 多阶段构建 Dockerfile
-# 运行时：Eclipse Temurin JRE 21（Alpine）
-# ============================================================
-
-# ---- 构建阶段 ----
-FROM maven:3.9-eclipse-temurin-21-alpine AS builder
-
+# syntax=docker/dockerfile:1
+# Build for the deployment host architecture, not the macOS host.
+FROM maven:3.9-eclipse-temurin-25@sha256:31618505df21177d2baa3dc574be2d0b0b32614c8539baca1f23a9136b766eb0 AS maven
+FROM container-registry.oracle.com/graalvm/native-image:25i3@sha256:18253bc0069911faa4326c2e37144210e0d51d84fbb06411cc1b0b39e4fb04a3 AS builder
+COPY --from=maven /usr/share/maven /usr/share/maven
+ENV PATH="/usr/share/maven/bin:${PATH}"
 WORKDIR /build
-
-# 先只拷贝 POM，利用 Docker 层缓存下载依赖
-COPY pom.xml .
-RUN mvn dependency:go-offline -q
-
-# 拷贝源码并打包（跳过测试）
+COPY pom.xml ./
+COPY .mvn ./.mvn
 COPY src ./src
-RUN mvn clean package -DskipTests -q
+RUN --mount=type=cache,target=/root/.m2 mvn -s .mvn/settings.xml -B -ntp -Pnative native:compile \
+    || { cat target/svm_err_*.md 2>/dev/null; exit 1; }
 
-# ---- 运行阶段 ----
-FROM eclipse-temurin:21-jre-alpine
-
-# 使用非 root 用户运行
-RUN addgroup -S sapiece && adduser -S sapiece -G sapiece
-
+FROM debian:trixie-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132 AS runtime
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl libzstd1 zlib1g \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --uid 10001 --create-home gateway
 WORKDIR /app
-
-# 从构建阶段复制 jar
-COPY --from=builder /build/target/SAPiece-Gateway-*.jar app.jar
-
-# 日志目录，挂载宿主机卷可持久化日志
-RUN mkdir -p logs && chown -R sapiece:sapiece /app
-
-USER sapiece
-
-EXPOSE 8080 8443
-
-# 容器健康检查（K8s readiness/liveness probe 的备用方案）
-HEALTHCHECK --interval=15s --timeout=5s --start-period=40s --retries=3 \
-  CMD wget -qO- http://localhost:8080/actuator/health || exit 1
-
-# JVM 参数说明：
-#   -XX:+UseZGC                  ZGC 低停顿 GC，适合响应式服务
-#   -XX:MaxRAMPercentage=75.0    最多使用容器内存的 75%，避免 OOM Kill
-#   -Djava.security.egd=...      加速 SecureRandom 初始化（影响 JWT 签发速度）
-#   SPRING_PROFILES_ACTIVE       通过环境变量切换配置文件，默认 prod
-ENTRYPOINT ["java", \
-    "-XX:+UseZGC", \
-    "-XX:MaxRAMPercentage=75.0", \
-    "-Djava.security.egd=file:/dev/./urandom", \
-    "-jar", "app.jar"]
-
-# 默认激活 prod profile，可通过 -e SPRING_PROFILES_ACTIVE=dev 覆盖
-ENV SPRING_PROFILES_ACTIVE=prod
+COPY --from=builder --chown=gateway:gateway /build/target/sapiece-gateway ./sapiece-gateway
+COPY --from=builder --chown=gateway:gateway /build/target/*.so ./
+RUN mkdir logs && chown gateway:gateway logs
+USER gateway
+ENV SPRING_PROFILES_ACTIVE=prod SERVER_PORT=8080
+EXPOSE 8080
+HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 \
+  CMD curl --fail --silent http://127.0.0.1:${SERVER_PORT}/actuator/health/readiness || exit 1
+ENTRYPOINT ["/app/sapiece-gateway", "-Duser.home=/tmp"]

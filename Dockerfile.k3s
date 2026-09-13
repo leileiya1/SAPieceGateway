@@ -1,0 +1,23 @@
+# syntax=docker/dockerfile:1
+FROM maven:3.9-eclipse-temurin-25@sha256:31618505df21177d2baa3dc574be2d0b0b32614c8539baca1f23a9136b766eb0 AS maven
+FROM container-registry.oracle.com/graalvm/native-image:25i3@sha256:18253bc0069911faa4326c2e37144210e0d51d84fbb06411cc1b0b39e4fb04a3 AS builder
+ARG NATIVE_BUILD_CPUS=12
+COPY --from=maven /usr/share/maven /usr/share/maven
+ENV PATH="/usr/share/maven/bin:${PATH}"
+WORKDIR /build
+COPY pom.xml ./
+COPY .mvn ./.mvn
+COPY src ./src
+RUN --mount=type=cache,target=/root/.m2 mvn -s .mvn/settings.xml -B -ntp \
+    -Pnative -Dnative.build.cpus=${NATIVE_BUILD_CPUS} native:compile \
+    || { cat target/svm_err_*.md 2>/dev/null; exit 1; }
+
+# K3s performs HTTP health probes itself, so the runtime needs no shell, curl,
+# package manager, or JDK. This base contains CA certificates, glibc and zlib.
+FROM gcr.io/distroless/base-debian13:nonroot@sha256:1411d9ad56e6210f3e3f71bd73e73122f91c6bca9422dcbc59750e30a13c95c0 AS runtime
+WORKDIR /app
+COPY --from=builder --chown=65532:65532 /build/target/sapiece-gateway ./sapiece-gateway
+COPY --from=builder --chown=65532:65532 /build/target/*.so ./
+ENV SPRING_PROFILES_ACTIVE=prod SERVER_PORT=8080
+EXPOSE 8080
+ENTRYPOINT ["/app/sapiece-gateway", "-Duser.home=/tmp"]

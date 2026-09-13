@@ -1,10 +1,9 @@
 package com.sapiece.nova.sapiecegateway.controller;
 
 import com.sapiece.nova.sapiecegateway.common.Result;
-import com.sapiece.nova.sapiecegateway.exception.BusinessException;
 import com.sapiece.nova.sapiecegateway.service.AuthService;
+import com.sapiece.nova.sapiecegateway.util.IpUtil;
 import lombok.Data;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -12,11 +11,12 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.server.reactive.ServerHttpRequest;
-import org.springframework.util.StringUtils;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -29,11 +29,17 @@ import java.util.Map;
 @Slf4j
 @RestController
 @RequestMapping("/auth")
-@RequiredArgsConstructor
 @Tag(name = "认证管理", description = "用户登录、登出、Token刷新等接口")
 public class AuthController {
 
     private final AuthService authService;
+    private final List<String> trustedProxies;
+
+    public AuthController(AuthService authService,
+                          @Value("${trusted-proxies:}") List<String> trustedProxies) {
+        this.authService = authService;
+        this.trustedProxies = trustedProxies;
+    }
 
     /**
      * 用户登录接口
@@ -45,16 +51,16 @@ public class AuthController {
     @PostMapping("/login")
     public Mono<Result<Map<String, Object>>> login(@RequestBody LoginRequest loginRequest,
                                                    ServerHttpRequest request) {
+        if (loginRequest == null || loginRequest.getUserName() == null || loginRequest.getUserName().isBlank()
+                || loginRequest.getPassword() == null || loginRequest.getPassword().isBlank()) {
+            throw new IllegalArgumentException("用户名和密码不能为空");
+        }
         String clientIp = extractClientIp(request);
         String userAgent = request.getHeaders().getFirst(HttpHeaders.USER_AGENT);
         log.info("用户登录请求, userName: {}, ip: {}", loginRequest.getUserName(), clientIp);
 
         return authService.login(loginRequest.getUserName(), loginRequest.getPassword(), clientIp, userAgent)
-                .map(data -> Result.success("登录成功", data))
-                .onErrorResume(e -> {
-                    log.error("用户登录失败, userName: {}, error: {}", loginRequest.getUserName(), e.getMessage());
-                    return Mono.just(toErrorResult(e));
-                });
+                .map(data -> Result.success("登录成功", data));
     }
 
     /**
@@ -80,26 +86,12 @@ public class AuthController {
                     return success ?
                             Result.success("登出成功", resultData) :
                             Result.<Map<String, Object>>error("登出失败");
-                })
-                .onErrorResume(e -> {
-                    log.error("用户登出失败, error: {}", e.getMessage());
-                    return Mono.just(toErrorResult(e));
                 });
     }
 
-    /** 提取客户端真实IP，信任前置代理的X-Forwarded-For */
+    /** 仅当直连来源是可信代理时才接受其转发的客户端 IP。 */
     private String extractClientIp(ServerHttpRequest request) {
-        String xff = request.getHeaders().getFirst("X-Forwarded-For");
-        if (StringUtils.hasText(xff) && !"unknown".equalsIgnoreCase(xff)) {
-            return xff.split(",")[0].trim();
-        }
-        String xri = request.getHeaders().getFirst("X-Real-IP");
-        if (StringUtils.hasText(xri) && !"unknown".equalsIgnoreCase(xri)) {
-            return xri.trim();
-        }
-        return request.getRemoteAddress() != null
-                ? request.getRemoteAddress().getAddress().getHostAddress()
-                : "unknown";
+        return IpUtil.extractClientIp(request, trustedProxies);
     }
 
     /**
@@ -119,10 +111,6 @@ public class AuthController {
                     Map<String, String> resultData = new HashMap<>();
                     resultData.put("token", newToken);
                     return Result.success("Token刷新成功", resultData);
-                })
-                .onErrorResume(e -> {
-                    log.error("Token刷新失败, error: {}", e.getMessage());
-                    return Mono.just(toErrorResult(e));
                 });
     }
 
@@ -135,14 +123,14 @@ public class AuthController {
     @Operation(summary = "刷新Access Token", description = "使用Refresh Token换取新的Access Token和Refresh Token（双Token模式）")
     @PostMapping("/refresh/token")
     public Mono<Result<Map<String, Object>>> refreshAccessToken(@RequestBody RefreshTokenRequest refreshTokenRequest) {
+        if (refreshTokenRequest == null || refreshTokenRequest.getRefreshToken() == null
+                || refreshTokenRequest.getRefreshToken().isBlank()) {
+            throw new IllegalArgumentException("Refresh Token不能为空");
+        }
         log.info("Access Token刷新请求（双Token模式）");
 
         return authService.refreshAccessToken(refreshTokenRequest.getRefreshToken())
-                .map(tokenData -> Result.success("Token刷新成功", tokenData))
-                .onErrorResume(e -> {
-                    log.error("Access Token刷新失败, error: {}", e.getMessage());
-                    return Mono.just(toErrorResult(e));
-                });
+                .map(tokenData -> Result.success("Token刷新成功", tokenData));
     }
 
     /**
@@ -158,18 +146,7 @@ public class AuthController {
         log.info("获取当前用户信息请求");
 
         return authService.getTokenInfo(token)
-                .map(tokenInfo -> Result.success("获取用户信息成功", tokenInfo))
-                .onErrorResume(e -> {
-                    log.error("获取用户信息失败, error: {}", e.getMessage());
-                    return Mono.just(toErrorResult(e));
-                });
-    }
-
-    private static <T> Result<T> toErrorResult(Throwable e) {
-        if (e instanceof BusinessException be) {
-            return Result.error(be.getCode(), be.getMessage());
-        }
-        return Result.error(e.getMessage());
+                .map(tokenInfo -> Result.success("获取用户信息成功", tokenInfo));
     }
 
     /**

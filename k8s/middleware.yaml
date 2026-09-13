@@ -1,0 +1,130 @@
+apiVersion: v1
+kind: Service
+metadata: {name: mysql, namespace: sapiece}
+spec:
+  clusterIP: None
+  selector: {app: mysql}
+  ports:
+    - {name: mysql, port: 3306}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: {name: mysql, namespace: sapiece}
+spec:
+  serviceName: mysql
+  replicas: 1
+  selector:
+    matchLabels: {app: mysql}
+  template:
+    metadata:
+      labels: {app: mysql}
+    spec:
+      nodeSelector:
+        sapiece.io/data: "true"
+      terminationGracePeriodSeconds: 60
+      securityContext: {fsGroup: 999}
+      containers:
+        - name: mysql
+          image: mysql:8.4
+          imagePullPolicy: IfNotPresent
+          args: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+          env:
+            - {name: MYSQL_DATABASE, value: sapiece_gateway}
+            - name: MYSQL_USER
+              valueFrom:
+                secretKeyRef: {name: sapiece-gateway-secret, key: DB_USERNAME}
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: sapiece-gateway-secret, key: DB_PASSWORD}
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: sapiece-gateway-secret, key: MYSQL_ROOT_PASSWORD}
+          ports:
+            - {name: mysql, containerPort: 3306}
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "mysqladmin ping -uroot -p\"$MYSQL_ROOT_PASSWORD\" --silent"]
+            periodSeconds: 5
+            failureThreshold: 12
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "mysqladmin ping -uroot -p\"$MYSQL_ROOT_PASSWORD\" --silent"]
+            periodSeconds: 15
+            failureThreshold: 3
+          resources:
+            requests: {cpu: "250m", memory: "512Mi"}
+            limits: {cpu: "2000m", memory: "2Gi"}
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/mysql}
+            - {name: schema, mountPath: /docker-entrypoint-initdb.d, readOnly: true}
+      volumes:
+        - name: schema
+          configMap: {name: sapiece-gateway-schema}
+  volumeClaimTemplates:
+    - metadata: {name: data}
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: local-path
+        resources:
+          requests: {storage: 20Gi}
+---
+apiVersion: v1
+kind: Service
+metadata: {name: redis, namespace: sapiece}
+spec:
+  clusterIP: None
+  selector: {app: redis}
+  ports:
+    - {name: redis, port: 6379}
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: {name: redis, namespace: sapiece}
+spec:
+  serviceName: redis
+  replicas: 1
+  selector:
+    matchLabels: {app: redis}
+  template:
+    metadata:
+      labels: {app: redis}
+    spec:
+      nodeSelector:
+        sapiece.io/data: "true"
+      terminationGracePeriodSeconds: 30
+      securityContext: {fsGroup: 999}
+      containers:
+        - name: redis
+          image: redis:7.4-alpine
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "-c"]
+          args:
+            - exec redis-server --appendonly yes --appendfsync everysec --requirepass "$REDIS_PASSWORD"
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: sapiece-gateway-secret, key: REDIS_PASSWORD}
+          ports:
+            - {name: redis, containerPort: 6379}
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "redis-cli -a \"$REDIS_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
+            periodSeconds: 5
+            failureThreshold: 12
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "redis-cli -a \"$REDIS_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
+            periodSeconds: 15
+            failureThreshold: 3
+          resources:
+            requests: {cpu: "100m", memory: "128Mi"}
+            limits: {cpu: "1000m", memory: "1Gi"}
+          volumeMounts:
+            - {name: data, mountPath: /data}
+  volumeClaimTemplates:
+    - metadata: {name: data}
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: local-path
+        resources:
+          requests: {storage: 5Gi}

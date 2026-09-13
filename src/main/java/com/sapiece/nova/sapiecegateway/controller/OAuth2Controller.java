@@ -3,26 +3,27 @@ package com.sapiece.nova.sapiecegateway.controller;
 import com.sapiece.nova.sapiecegateway.common.Result;
 import com.sapiece.nova.sapiecegateway.entity.SysOAuthConfig;
 import com.sapiece.nova.sapiecegateway.entity.SysOAuthUser;
+import com.sapiece.nova.sapiecegateway.exception.BusinessException;
 import com.sapiece.nova.sapiecegateway.service.OAuth2Service;
+import com.sapiece.nova.sapiecegateway.service.OAuthStateService;
+import com.sapiece.nova.sapiecegateway.util.IpUtil;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.Data;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.ReactiveSecurityContextHolder;
 import org.springframework.security.core.context.SecurityContext;
-import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
 /**
  * OAuth2第三方登录控制器
@@ -34,11 +35,20 @@ import java.util.UUID;
 @Slf4j
 @RestController
 @RequestMapping("/auth/oauth2")
-@RequiredArgsConstructor
 @Tag(name = "OAuth2第三方登录", description = "第三方登录相关接口（GitHub、Google、Gitee等）")
 public class OAuth2Controller {
 
     private final OAuth2Service oAuth2Service;
+    private final OAuthStateService oAuthStateService;
+    private final List<String> trustedProxies;
+
+    public OAuth2Controller(OAuth2Service oAuth2Service,
+                            OAuthStateService oAuthStateService,
+                            @Value("${trusted-proxies:}") List<String> trustedProxies) {
+        this.oAuth2Service = oAuth2Service;
+        this.oAuthStateService = oAuthStateService;
+        this.trustedProxies = trustedProxies;
+    }
 
     /**
      * 获取所有启用的OAuth提供商列表
@@ -62,10 +72,6 @@ public class OAuth2Controller {
                 .map(providers -> {
                     log.info("查询到OAuth提供商数量: {}", providers.size());
                     return Result.success("获取成功", providers);
-                })
-                .onErrorResume(e -> {
-                    log.error("获取OAuth提供商列表失败: {}", e.getMessage());
-                    return Mono.just(Result.error("获取OAuth提供商列表失败"));
                 });
     }
 
@@ -82,22 +88,16 @@ public class OAuth2Controller {
     public Mono<Result<Map<String, String>>> getAuthorizationUrl(@PathVariable String provider) {
         log.info("获取OAuth授权URL, provider: {}", provider);
 
-        // 生成随机state参数，用于防CSRF攻击
-        String state = UUID.randomUUID().toString().replace("-", "");
-
-        return oAuth2Service.getAuthorizationUrl(provider, state)
-                .map(authUrl -> {
+        return oAuthStateService.issue(provider)
+                .flatMap(state -> oAuth2Service.getAuthorizationUrl(provider, state)
+                        .map(authUrl -> {
                     Map<String, String> result = new HashMap<>();
                     result.put("authUrl", authUrl);
                     result.put("state", state);
 
                     log.info("OAuth授权URL生成成功, provider: {}", provider);
                     return Result.success("获取成功", result);
-                })
-                .onErrorResume(e -> {
-                    log.error("获取OAuth授权URL失败, provider: {}, error: {}", provider, e.getMessage());
-                    return Mono.just(Result.error("获取授权URL失败: " + e.getMessage()));
-                });
+                }));
     }
 
     /**
@@ -115,7 +115,7 @@ public class OAuth2Controller {
     public Mono<Result<Map<String, Object>>> callback(
             @PathVariable String provider,
             @RequestParam String code,
-            @RequestParam(required = false) String state,
+            @RequestParam String state,
             ServerHttpRequest request) {
 
         log.info("OAuth回调, provider: {}, code长度: {}", provider, code != null ? code.length() : 0);
@@ -124,7 +124,8 @@ public class OAuth2Controller {
         String clientIp = extractClientIp(request);
         String userAgent = request.getHeaders().getFirst(HttpHeaders.USER_AGENT);
 
-        return oAuth2Service.oauthLogin(provider, code, state, clientIp, userAgent)
+        return oAuthStateService.consume(provider, state)
+                .then(oAuth2Service.oauthLogin(provider, code, state, clientIp, userAgent))
                 .map(result -> {
                     boolean needBind = (boolean) result.get("needBind");
                     if (needBind) {
@@ -134,10 +135,6 @@ public class OAuth2Controller {
                         log.info("OAuth登录成功, provider: {}, userName: {}", provider, result.get("userName"));
                         return Result.success("登录成功", result);
                     }
-                })
-                .onErrorResume(e -> {
-                    log.error("OAuth回调处理失败, provider: {}, error: {}", provider, e.getMessage());
-                    return Mono.just(Result.error("OAuth登录失败: " + e.getMessage()));
                 });
     }
 
@@ -152,6 +149,9 @@ public class OAuth2Controller {
     @PreAuthorize("isAuthenticated()")
     @Operation(summary = "绑定OAuth账号", description = "将OAuth账号绑定到当前登录的系统用户")
     public Mono<Result<SysOAuthUser>> bindAccount(@RequestBody BindOAuthRequest request) {
+        if (request == null || request.getOauthUserId() == null || request.getOauthUserId() <= 0) {
+            throw new IllegalArgumentException("OAuth用户ID必须大于0");
+        }
         log.info("绑定OAuth账号, oauthUserId: {}", request.getOauthUserId());
 
         return ReactiveSecurityContextHolder.getContext()
@@ -163,7 +163,7 @@ public class OAuth2Controller {
                     Long userId = extractUserId(principal);
 
                     if (userId == null) {
-                        return Mono.just(Result.<SysOAuthUser>error("无法获取当前用户信息"));
+                        return Mono.error(new BusinessException(401, "无法获取当前用户信息"));
                     }
 
                     return oAuth2Service.bindOAuthAccount(userId, request.getOauthUserId())
@@ -172,10 +172,6 @@ public class OAuth2Controller {
                                         userId, oauthUser.getProvider());
                                 return Result.success("绑定成功", oauthUser);
                             });
-                })
-                .onErrorResume(e -> {
-                    log.error("绑定OAuth账号失败: {}", e.getMessage());
-                    return Mono.just(Result.error("绑定失败: " + e.getMessage()));
                 });
     }
 
@@ -198,7 +194,7 @@ public class OAuth2Controller {
                     Long userId = extractUserId(auth.getPrincipal());
 
                     if (userId == null) {
-                        return Mono.just(Result.<Void>error("无法获取当前用户信息"));
+                        return Mono.error(new BusinessException(401, "无法获取当前用户信息"));
                     }
 
                     return oAuth2Service.unbindOAuthAccount(userId, provider)
@@ -208,13 +204,9 @@ public class OAuth2Controller {
                                     return Result.<Void>success("解绑成功", null);
                                 } else {
                                     log.warn("OAuth账号解绑失败, userId: {}, provider: {}", userId, provider);
-                                    return Result.<Void>error("未找到绑定关系");
+                                    throw new BusinessException(404, "未找到绑定关系");
                                 }
                             });
-                })
-                .onErrorResume(e -> {
-                    log.error("解绑OAuth账号失败, provider: {}, error: {}", provider, e.getMessage());
-                    return Mono.just(Result.error("解绑失败: " + e.getMessage()));
                 });
     }
 
@@ -235,7 +227,7 @@ public class OAuth2Controller {
                     Long userId = extractUserId(auth.getPrincipal());
 
                     if (userId == null) {
-                        return Mono.just(Result.<List<Map<String, Object>>>error("无法获取当前用户信息"));
+                        return Mono.error(new BusinessException(401, "无法获取当前用户信息"));
                     }
 
                     return oAuth2Service.getBoundAccounts(userId)
@@ -256,10 +248,6 @@ public class OAuth2Controller {
                                 log.info("查询到用户已绑定OAuth账号数量: {}", accounts.size());
                                 return Result.success("获取成功", accounts);
                             });
-                })
-                .onErrorResume(e -> {
-                    log.error("获取已绑定OAuth账号失败: {}", e.getMessage());
-                    return Mono.just(Result.error("获取失败: " + e.getMessage()));
                 });
     }
 
@@ -269,26 +257,7 @@ public class OAuth2Controller {
      * 从请求中提取客户端IP
      */
     private String extractClientIp(ServerHttpRequest request) {
-        String ip = request.getHeaders().getFirst("X-Forwarded-For");
-
-        if (StringUtils.hasText(ip) && !"unknown".equalsIgnoreCase(ip)) {
-            int index = ip.indexOf(',');
-            if (index > 0) {
-                ip = ip.substring(0, index);
-            }
-            return ip.trim();
-        }
-
-        ip = request.getHeaders().getFirst("X-Real-IP");
-        if (StringUtils.hasText(ip) && !"unknown".equalsIgnoreCase(ip)) {
-            return ip;
-        }
-
-        if (request.getRemoteAddress() != null) {
-            return request.getRemoteAddress().getAddress().getHostAddress();
-        }
-
-        return "unknown";
+        return IpUtil.extractClientIp(request, trustedProxies);
     }
 
     /**

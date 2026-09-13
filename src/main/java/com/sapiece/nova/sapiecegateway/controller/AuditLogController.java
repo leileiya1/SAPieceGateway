@@ -2,6 +2,8 @@ package com.sapiece.nova.sapiecegateway.controller;
 
 import com.sapiece.nova.sapiecegateway.common.Result;
 import com.sapiece.nova.sapiecegateway.entity.SysAuditLog;
+import com.sapiece.nova.sapiecegateway.dto.AuditLogSearchCriteria;
+import com.sapiece.nova.sapiecegateway.exception.BusinessException;
 import com.sapiece.nova.sapiecegateway.service.AuditLogService;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import io.swagger.v3.oas.annotations.Operation;
@@ -50,7 +52,7 @@ public class AuditLogController {
         log.info("查询审计日志详情, id: {}", id);
         return auditLogService.getById(id)
                 .map(auditLog -> Result.success("查询成功", auditLog))
-                .defaultIfEmpty(Result.error("日志不存在"));
+                .switchIfEmpty(Mono.error(new BusinessException(404, "日志不存在")));
     }
 
     // ==================== 列表查询 ====================
@@ -83,11 +85,11 @@ public class AuditLogController {
         log.info("根据时间范围查询审计日志, startTime: {}, endTime: {}", request.getStartTime(), request.getEndTime());
 
         if (request.getStartTime() == null || request.getEndTime() == null) {
-            return Mono.just(Result.error("开始时间和结束时间不能为空"));
+            throw new IllegalArgumentException("开始时间和结束时间不能为空");
         }
 
         if (request.getStartTime().isAfter(request.getEndTime())) {
-            return Mono.just(Result.error("开始时间不能晚于结束时间"));
+            throw new IllegalArgumentException("开始时间不能晚于结束时间");
         }
 
         return auditLogService.getByTimeRange(request.getStartTime(), request.getEndTime())
@@ -105,22 +107,29 @@ public class AuditLogController {
     @Operation(summary = "综合条件查询审计日志", description = "支持多条件组合查询审计日志")
     public Mono<Result<List<SysAuditLog>>> search(@RequestBody AuditLogSearchRequest request) {
         log.info("综合条件查询审计日志, request: {}", request);
-
-        // 如果指定了用户ID，按用户查询
-        if (request.getUserId() != null) {
-            return auditLogService.getByUserId(request.getUserId())
-                    .collectList()
-                    .map(list -> Result.success("查询成功", list));
+        if (request == null || !request.hasAnyCondition()) {
+            throw new IllegalArgumentException("请至少指定一个查询条件");
         }
-
-        // 如果指定了时间范围，按时间查询
-        if (request.getStartTime() != null && request.getEndTime() != null) {
-            return auditLogService.getByTimeRange(request.getStartTime(), request.getEndTime())
-                    .collectList()
-                    .map(list -> Result.success("查询成功", list));
+        if (request.getUserId() != null && request.getUserId() <= 0) {
+            throw new IllegalArgumentException("用户ID必须大于0");
         }
-
-        return Mono.just(Result.error("请至少指定用户ID或时间范围"));
+        if (request.getStatus() != null && request.getStatus() != 0 && request.getStatus() != 1) {
+            throw new IllegalArgumentException("状态只能是0或1");
+        }
+        if (request.getStartTime() != null && request.getEndTime() != null
+                && request.getStartTime().isAfter(request.getEndTime())) {
+            throw new IllegalArgumentException("开始时间不能晚于结束时间");
+        }
+        request.validateLengths();
+        int limit = request.getLimit() == null ? 200 : Math.max(1, Math.min(request.getLimit(), 1000));
+        AuditLogSearchCriteria criteria = AuditLogSearchCriteria.builder()
+                .userId(request.getUserId()).userName(request.getUserName())
+                .module(request.getModule()).operation(request.getOperation())
+                .status(request.getStatus()).clientIp(request.getClientIp())
+                .startTime(request.getStartTime()).endTime(request.getEndTime())
+                .limit(limit).build();
+        return auditLogService.search(criteria).collectList()
+                .map(list -> Result.success("查询成功", list));
     }
 
     // ==================== 登录记录查询 ====================
@@ -140,7 +149,7 @@ public class AuditLogController {
         log.info("查询用户最近登录记录, userName: {}, limit: {}", userName, limit);
 
         // 限制最大查询数量
-        int actualLimit = Math.min(limit, 100);
+        int actualLimit = Math.max(1, Math.min(limit, 100));
 
         return auditLogService.getRecentLogin(userName, actualLimit)
                 .collectList()
@@ -163,11 +172,13 @@ public class AuditLogController {
             @Parameter(description = "时间范围（分钟），默认30") @RequestParam(defaultValue = "30") int minutes) {
         log.info("统计用户登录失败次数, userName: {}, minutes: {}", userName, minutes);
 
-        return auditLogService.countLoginFailed(userName, minutes)
+        int actualMinutes = normalizeMinutes(minutes);
+
+        return auditLogService.countLoginFailed(userName, actualMinutes)
                 .map(count -> {
                     LoginFailedCountResponse response = new LoginFailedCountResponse();
                     response.setUserName(userName);
-                    response.setMinutes(minutes);
+                    response.setMinutes(actualMinutes);
                     response.setFailedCount(count);
                     return Result.success("统计成功", response);
                 });
@@ -184,7 +195,10 @@ public class AuditLogController {
     public Mono<Result<IpLoginFailedCountResponse>> countLoginFailedByIp(@RequestBody IpLoginFailedRequest request) {
         log.info("统计IP登录失败次数, clientIp: {}, minutes: {}", request.getClientIp(), request.getMinutes());
 
-        int minutes = request.getMinutes() != null ? request.getMinutes() : 30;
+        if (request == null || request.getClientIp() == null || request.getClientIp().isBlank()) {
+            throw new IllegalArgumentException("客户端IP不能为空");
+        }
+        int minutes = normalizeMinutes(request.getMinutes() != null ? request.getMinutes() : 30);
 
         return auditLogService.countLoginFailedByIp(request.getClientIp(), minutes)
                 .map(count -> {
@@ -210,7 +224,13 @@ public class AuditLogController {
         log.info("清理历史审计日志请求, beforeDays: {}", request.getBeforeDays());
 
         // 最少保留7天
+        if (request == null || request.getBeforeDays() == null) {
+            throw new IllegalArgumentException("保留天数不能为空");
+        }
         int beforeDays = Math.max(request.getBeforeDays(), 7);
+        if (beforeDays > 36500) {
+            throw new IllegalArgumentException("保留天数不能超过36500");
+        }
 
         return auditLogService.cleanHistory(beforeDays)
                 .map(count -> {
@@ -222,6 +242,13 @@ public class AuditLogController {
     }
 
     // ==================== DTO类 ====================
+
+    private static int normalizeMinutes(int minutes) {
+        if (minutes <= 0 || minutes > 7 * 24 * 60) {
+            throw new IllegalArgumentException("统计时间必须在1到10080分钟之间");
+        }
+        return minutes;
+    }
 
     /**
      * 时间范围查询请求
@@ -239,6 +266,7 @@ public class AuditLogController {
          */
         @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
         private LocalDateTime endTime;
+
     }
 
     /**
@@ -287,6 +315,26 @@ public class AuditLogController {
          */
         @JsonFormat(pattern = "yyyy-MM-dd HH:mm:ss")
         private LocalDateTime endTime;
+
+        /** 最大返回条数，默认200，最大1000。 */
+        private Integer limit;
+
+        boolean hasAnyCondition() {
+            return userId != null || hasText(userName) || hasText(module) || hasText(operation)
+                    || status != null || hasText(clientIp) || startTime != null || endTime != null;
+        }
+
+        void validateLengths() {
+            checkLength(userName, 64, "用户名");
+            checkLength(module, 32, "模块");
+            checkLength(operation, 32, "操作类型");
+            checkLength(clientIp, 64, "客户端IP");
+        }
+
+        private static boolean hasText(String value) { return value != null && !value.isBlank(); }
+        private static void checkLength(String value, int max, String label) {
+            if (value != null && value.trim().length() > max) throw new IllegalArgumentException(label + "过长");
+        }
     }
 
     /**

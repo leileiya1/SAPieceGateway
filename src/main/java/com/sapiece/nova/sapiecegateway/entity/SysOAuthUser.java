@@ -1,5 +1,6 @@
 package com.sapiece.nova.sapiecegateway.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -90,12 +91,14 @@ public class SysOAuthUser {
      * OAuth AccessToken（加密存储）
      */
     @Column("access_token")
+    @JsonIgnore
     private String accessToken;
 
     /**
      * OAuth RefreshToken（加密存储）
      */
     @Column("refresh_token")
+    @JsonIgnore
     private String refreshToken;
 
     /**
@@ -110,6 +113,7 @@ public class SysOAuthUser {
      * 原始用户信息（JSON格式）
      */
     @Column("raw_user_info")
+    @JsonIgnore
     private String rawUserInfo;
 
     // ==================== 时间信息 ====================

@@ -40,8 +40,7 @@ public class AdminController {
     @GetMapping("/ip/blacklist")
     public Mono<Result<List<String>>> getIpBlacklist() {
         log.info("获取IP黑名单列表请求");
-        List<String> blacklist = adminService.getIpBlacklist();
-        return Mono.just(Result.success("获取成功", blacklist));
+        return adminService.getIpBlacklist().map(list -> Result.success("获取成功", list));
     }
 
     /**
@@ -52,9 +51,10 @@ public class AdminController {
      */
     @PostMapping("/ip/blacklist")
     public Mono<Result<Void>> addToIpBlacklist(@RequestBody IpRequest request) {
+        requireIp(request);
         log.info("添加IP到黑名单请求, ip: {}", request.getIp());
-        adminService.addToIpBlacklist(request.getIp());
-        return Mono.just(Result.success("添加成功", null));
+        return adminService.addToIpBlacklist(request.getIp())
+                .map(added -> Result.success(added ? "添加成功" : "IP已存在", null));
     }
 
     /**
@@ -65,9 +65,10 @@ public class AdminController {
      */
     @DeleteMapping("/ip/blacklist")
     public Mono<Result<Void>> removeFromIpBlacklist(@RequestBody IpRequest request) {
+        requireIp(request);
         log.info("从黑名单中移除IP请求, ip: {}", request.getIp());
-        adminService.removeFromIpBlacklist(request.getIp());
-        return Mono.just(Result.success("移除成功", null));
+        return adminService.removeFromIpBlacklist(request.getIp())
+                .map(removed -> Result.success(removed ? "移除成功" : "IP不存在", null));
     }
 
     // ==================== IP白名单管理 ====================
@@ -80,8 +81,7 @@ public class AdminController {
     @GetMapping("/ip/whitelist")
     public Mono<Result<List<String>>> getIpWhitelist() {
         log.info("获取IP白名单列表请求");
-        List<String> whitelist = adminService.getIpWhitelist();
-        return Mono.just(Result.success("获取成功", whitelist));
+        return adminService.getIpWhitelist().map(list -> Result.success("获取成功", list));
     }
 
     /**
@@ -92,9 +92,10 @@ public class AdminController {
      */
     @PostMapping("/ip/whitelist")
     public Mono<Result<Void>> addToIpWhitelist(@RequestBody IpRequest request) {
+        requireIp(request);
         log.info("添加IP到白名单请求, ip: {}", request.getIp());
-        adminService.addToIpWhitelist(request.getIp());
-        return Mono.just(Result.success("添加成功", null));
+        return adminService.addToIpWhitelist(request.getIp())
+                .map(added -> Result.success(added ? "添加成功" : "IP已存在", null));
     }
 
     /**
@@ -105,9 +106,10 @@ public class AdminController {
      */
     @DeleteMapping("/ip/whitelist")
     public Mono<Result<Void>> removeFromIpWhitelist(@RequestBody IpRequest request) {
+        requireIp(request);
         log.info("从白名单中移除IP请求, ip: {}", request.getIp());
-        adminService.removeFromIpWhitelist(request.getIp());
-        return Mono.just(Result.success("移除成功", null));
+        return adminService.removeFromIpWhitelist(request.getIp())
+                .map(removed -> Result.success(removed ? "移除成功" : "IP不存在", null));
     }
 
     // ==================== Token黑名单管理 ====================
@@ -120,6 +122,8 @@ public class AdminController {
      */
     @PostMapping("/token/blacklist")
     public Mono<Result<Void>> addTokenToBlacklist(@RequestBody TokenBlacklistRequest request) {
+        requireToken(request == null ? null : request.getToken());
+        requirePositiveHours(request.getDurationHours());
         log.info("将Token加入黑名单请求, duration: {}小时", request.getDurationHours());
 
         return adminService.addTokenToBlacklist(request.getToken(), request.getDurationHours())
@@ -136,6 +140,7 @@ public class AdminController {
      */
     @DeleteMapping("/token/blacklist")
     public Mono<Result<Void>> removeTokenFromBlacklist(@RequestBody TokenRequest request) {
+        requireToken(request == null ? null : request.getToken());
         log.info("从黑名单中移除Token请求");
 
         return adminService.removeTokenFromBlacklist(request.getToken())
@@ -152,6 +157,7 @@ public class AdminController {
      */
     @PostMapping("/token/blacklist/check")
     public Mono<Result<Map<String, Boolean>>> checkTokenBlacklist(@RequestBody TokenRequest request) {
+        requireToken(request == null ? null : request.getToken());
         log.info("检查Token是否在黑名单中请求");
 
         return adminService.isTokenBlacklisted(request.getToken())
@@ -172,6 +178,10 @@ public class AdminController {
      */
     @PostMapping("/user/blacklist")
     public Mono<Result<Void>> addUserToBlacklist(@RequestBody UserBlacklistRequest request) {
+        if (request == null || request.getUserId() == null || request.getUserId() <= 0) {
+            throw new IllegalArgumentException("用户ID必须大于0");
+        }
+        requirePositiveHours(request.getDurationHours());
         log.info("将用户加入黑名单请求, userId: {}, duration: {}小时",
                 request.getUserId(), request.getDurationHours());
 
@@ -189,6 +199,9 @@ public class AdminController {
      */
     @GetMapping("/user/blacklist/check/{userId}")
     public Mono<Result<Map<String, Boolean>>> checkUserBlacklist(@PathVariable Long userId) {
+        if (userId == null || userId <= 0) {
+            throw new IllegalArgumentException("用户ID必须大于0");
+        }
         log.info("检查用户是否在黑名单中请求, userId: {}", userId);
 
         return adminService.isUserBlacklisted(userId)
@@ -200,6 +213,25 @@ public class AdminController {
     }
 
     // ==================== DTO类 ====================
+
+    private static void requireIp(IpRequest request) {
+        if (request == null || request.getIp() == null || request.getIp().isBlank()
+                || !request.getIp().matches("[0-9A-Fa-f:.]+(?:/[0-9]{1,3})?")) {
+            throw new IllegalArgumentException("IP地址或CIDR格式不正确");
+        }
+    }
+
+    private static void requireToken(String token) {
+        if (token == null || token.isBlank() || token.length() > 8192) {
+            throw new IllegalArgumentException("Token不能为空且长度不能超过8192");
+        }
+    }
+
+    private static void requirePositiveHours(Long hours) {
+        if (hours == null || hours <= 0 || hours > 24 * 365) {
+            throw new IllegalArgumentException("有效期必须在1到8760小时之间");
+        }
+    }
 
     /**
      * IP请求DTO

@@ -1,7 +1,7 @@
 package com.sapiece.nova.sapiecegateway.service.impl;
 
-import com.sapiece.nova.sapiecegateway.filter.IpBlackWhiteListFilter;
 import com.sapiece.nova.sapiecegateway.service.AdminService;
+import com.sapiece.nova.sapiecegateway.service.IpAccessListService;
 import com.sapiece.nova.sapiecegateway.service.TokenBlacklistService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -23,43 +23,43 @@ import java.util.List;
 @RequiredArgsConstructor
 public class AdminServiceImpl implements AdminService {
 
-    private final IpBlackWhiteListFilter ipFilter;
+    private final IpAccessListService ipAccessListService;
     private final TokenBlacklistService tokenBlacklistService;
 
     @Override
-    public List<String> getIpBlacklist() {
+    public Mono<List<String>> getIpBlacklist() {
         log.debug("获取IP黑名单列表");
-        return ipFilter.getBlacklist();
+        return ipAccessListService.getBlacklist();
     }
 
     @Override
-    public void addToIpBlacklist(String ip) {
+    public Mono<Boolean> addToIpBlacklist(String ip) {
         log.info("添加IP到黑名单, ip: {}", ip);
-        ipFilter.addToBlacklist(ip);
+        return ipAccessListService.addToBlacklist(ip);
     }
 
     @Override
-    public void removeFromIpBlacklist(String ip) {
+    public Mono<Boolean> removeFromIpBlacklist(String ip) {
         log.info("从黑名单中移除IP, ip: {}", ip);
-        ipFilter.removeFromBlacklist(ip);
+        return ipAccessListService.removeFromBlacklist(ip);
     }
 
     @Override
-    public List<String> getIpWhitelist() {
+    public Mono<List<String>> getIpWhitelist() {
         log.debug("获取IP白名单列表");
-        return ipFilter.getWhitelist();
+        return ipAccessListService.getWhitelist();
     }
 
     @Override
-    public void addToIpWhitelist(String ip) {
+    public Mono<Boolean> addToIpWhitelist(String ip) {
         log.info("添加IP到白名单, ip: {}", ip);
-        ipFilter.addToWhitelist(ip);
+        return ipAccessListService.addToWhitelist(ip);
     }
 
     @Override
-    public void removeFromIpWhitelist(String ip) {
+    public Mono<Boolean> removeFromIpWhitelist(String ip) {
         log.info("从白名单中移除IP, ip: {}", ip);
-        ipFilter.removeFromWhitelist(ip);
+        return ipAccessListService.removeFromWhitelist(ip);
     }
 
     @Override

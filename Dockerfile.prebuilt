@@ -1,0 +1,15 @@
+# Linux executable built with: mvn -Pnative native:compile
+FROM debian:trixie-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl libzstd1 zlib1g \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --uid 10001 --create-home gateway
+WORKDIR /app
+COPY --chown=gateway:gateway sapiece-gateway ./sapiece-gateway
+COPY --chown=gateway:gateway *.so ./
+RUN mkdir logs && chown gateway:gateway logs
+USER gateway
+ENV SPRING_PROFILES_ACTIVE=prod SERVER_PORT=8080
+EXPOSE 8080
+HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 \
+  CMD curl --fail --silent http://127.0.0.1:${SERVER_PORT}/actuator/health/readiness || exit 1
+ENTRYPOINT ["/app/sapiece-gateway", "-Duser.home=/tmp"]

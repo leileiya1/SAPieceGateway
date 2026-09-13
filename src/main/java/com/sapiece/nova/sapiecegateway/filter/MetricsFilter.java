@@ -1,14 +1,14 @@
 package com.sapiece.nova.sapiecegateway.filter;
 
+import com.sapiece.nova.sapiecegateway.config.GracefulShutdownHandler;
 import com.sapiece.nova.sapiecegateway.service.GatewayMetricsService;
-import com.sapiece.nova.sapiecegateway.util.LogContext;
-import com.sapiece.nova.sapiecegateway.util.ResponseUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
 import org.springframework.core.Ordered;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.http.server.reactive.ServerHttpResponse;
 import org.springframework.stereotype.Component;
@@ -28,6 +28,7 @@ import reactor.core.publisher.Mono;
 public class MetricsFilter implements GlobalFilter, Ordered {
 
     private final GatewayMetricsService metricsService;
+    private final GracefulShutdownHandler shutdownHandler;
 
     /**
      * 过滤器优先级 - 最高，确保能够记录所有请求
@@ -46,27 +47,16 @@ public class MetricsFilter implements GlobalFilter, Ordered {
         // 记录请求开始时间
         long startTime = System.currentTimeMillis();
 
-        // 设置结构化日志上下文
-        LogContext.generateTraceId();
-        LogContext.setRequestPath(path);
-        LogContext.setRequestMethod(method);
-        LogContext.setClientIp(ResponseUtil.getClientIp(exchange));
-
         // 记录请求
         metricsService.recordRequest(path, method);
+        shutdownHandler.requestStarted();
 
         return chain.filter(exchange)
                 .doOnSuccess(unused -> {
                     // 请求成功完成
                     long duration = System.currentTimeMillis() - startTime;
                     ServerHttpResponse response = exchange.getResponse();
-                    HttpStatus statusCode = (HttpStatus) response.getStatusCode();
-
-                    // 设置状态码和处理时长到日志上下文
-                    if (statusCode != null) {
-                        LogContext.setStatusCode(statusCode.value());
-                    }
-                    LogContext.setDuration(duration);
+                    HttpStatusCode statusCode = response.getStatusCode();
 
                     // 记录请求处理时间
                     metricsService.recordRequestDuration(path, method, duration);
@@ -76,11 +66,11 @@ public class MetricsFilter implements GlobalFilter, Ordered {
                         metricsService.recordError(statusCode.value(), path);
 
                         // 记录特定类型的错误
-                        if (statusCode == HttpStatus.UNAUTHORIZED) {
+                        if (statusCode.value() == HttpStatus.UNAUTHORIZED.value()) {
                             metricsService.recordAuthFailure(path);
-                        } else if (statusCode == HttpStatus.FORBIDDEN) {
+                        } else if (statusCode.value() == HttpStatus.FORBIDDEN.value()) {
                             metricsService.recordPermissionDenied(path);
-                        } else if (statusCode == HttpStatus.TOO_MANY_REQUESTS) {
+                        } else if (statusCode.value() == HttpStatus.TOO_MANY_REQUESTS.value()) {
                             metricsService.recordRateLimitHit(path);
                         }
                     }
@@ -92,10 +82,6 @@ public class MetricsFilter implements GlobalFilter, Ordered {
                     // 请求处理出错
                     long duration = System.currentTimeMillis() - startTime;
 
-                    // 设置错误状态码和处理时长到日志上下文
-                    LogContext.setStatusCode(500);
-                    LogContext.setDuration(duration);
-
                     // 记录处理时间
                     metricsService.recordRequestDuration(path, method, duration);
 
@@ -106,8 +92,7 @@ public class MetricsFilter implements GlobalFilter, Ordered {
                             method, path, duration, error.getMessage());
                 })
                 .doFinally(signalType -> {
-                    // 清除日志上下文（避免内存泄漏）
-                    LogContext.clear();
+                    shutdownHandler.requestFinished();
                 });
     }
 }

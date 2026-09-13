@@ -60,11 +60,11 @@ public class GlobalExceptionHandler implements ErrorWebExceptionHandler {
         Result<?> result;
         HttpStatus httpStatus;
 
-        if (ex instanceof BusinessException) {
+        if (ex instanceof BusinessException businessException) {
             // 业务异常
-            result = handleBusinessException((BusinessException) ex);
-            httpStatus = HttpStatus.OK; // 业务异常返回200，通过code区分
-            log.warn("业务异常: code={}, message={}", ((BusinessException) ex).getCode(), ex.getMessage());
+            result = handleBusinessException(businessException);
+            httpStatus = statusForBusinessCode(businessException.getCode());
+            log.warn("业务异常: code={}, httpStatus={}, message={}", businessException.getCode(), httpStatus, ex.getMessage());
         } else if (ex instanceof AccessDeniedException) {
             // 权限不足异常
             result = handleAccessDeniedException((AccessDeniedException) ex);
@@ -110,6 +110,28 @@ public class GlobalExceptionHandler implements ErrorWebExceptionHandler {
     private Result<?> handleBusinessException(BusinessException ex) {
         log.debug("处理业务异常: code={}, message={}", ex.getCode(), ex.getMessage());
         return Result.error(ex.getCode(), ex.getMessage());
+    }
+
+    static HttpStatus statusForBusinessCode(Integer code) {
+        if (code == null) return HttpStatus.INTERNAL_SERVER_ERROR;
+        if (code >= 400 && code <= 599) return HttpStatus.valueOf(code);
+        if (code == 10002) return HttpStatus.SERVICE_UNAVAILABLE;
+        if (code == 10003) return HttpStatus.GATEWAY_TIMEOUT;
+        if (code >= 10000 && code < 20000) return HttpStatus.INTERNAL_SERVER_ERROR;
+        if (code == 20010 || code == 20011) return HttpStatus.FORBIDDEN;
+        if (code >= 20000 && code < 30000) return HttpStatus.UNAUTHORIZED;
+        if (code == 30002) return HttpStatus.SERVICE_UNAVAILABLE;
+        if (code >= 30000 && code < 40000) return HttpStatus.TOO_MANY_REQUESTS;
+        if (code == 40001 || code == 40002) return HttpStatus.NOT_FOUND;
+        if (code >= 40000 && code < 50000) return HttpStatus.BAD_GATEWAY;
+        if (code == 50006) return HttpStatus.CONFLICT;
+        if (code == 50007 || code == 50008) return HttpStatus.FORBIDDEN;
+        if (code >= 50000 && code < 60000) return HttpStatus.BAD_REQUEST;
+        if (code == 60002) return HttpStatus.NOT_FOUND;
+        if (code == 60003) return HttpStatus.CONFLICT;
+        if (code == 60004) return HttpStatus.FORBIDDEN;
+        if (code >= 60000 && code < 70000) return HttpStatus.UNPROCESSABLE_ENTITY;
+        return HttpStatus.INTERNAL_SERVER_ERROR;
     }
 
     /**
@@ -164,7 +186,8 @@ public class GlobalExceptionHandler implements ErrorWebExceptionHandler {
      */
     private Result<?> handleUnknownException(Throwable ex) {
         log.debug("处理未知异常: type={}, message={}", ex.getClass().getName(), ex.getMessage());
-        return Result.error(ErrorCode.SYSTEM_ERROR, "系统异常: " + ex.getMessage());
+        // 详细异常只写服务端日志，避免把数据库、网络或内部类信息泄漏给调用方。
+        return Result.error(ErrorCode.SYSTEM_ERROR);
     }
 
     /**

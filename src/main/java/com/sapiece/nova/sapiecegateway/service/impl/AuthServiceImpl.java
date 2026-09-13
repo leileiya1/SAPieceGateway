@@ -135,88 +135,55 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     public Mono<String> refreshToken(String token) {
-        log.info("Token刷新业务处理");
-
-        // 移除Bearer前缀
-        String actualToken = removeBearerPrefix(token);
-
-        // 刷新Token
-        try {
-            String newToken = jwtUtil.refreshToken(actualToken);
-            log.info("Token刷新成功");
-            return Mono.just(newToken);
-        } catch (Exception e) {
-            log.error("Token刷新失败, error: {}", e.getMessage());
-            return Mono.error(new BusinessException(400, "Token刷新失败：" + e.getMessage()));
-        }
+        return Mono.error(new BusinessException(400,
+                "旧Token刷新接口已停用，请使用/auth/refresh/token提交Refresh Token"));
     }
 
     @Override
     public Mono<Map<String, Object>> refreshAccessToken(String refreshToken) {
-        log.info("使用Refresh Token刷新Access Token");
-
-        String actualToken = removeBearerPrefix(refreshToken);
-
-        if (!jwtUtil.validateToken(actualToken)) {
-            return Mono.error(new BusinessException(401, "Refresh Token无效或已过期，请重新登录"));
-        }
-        if (!jwtUtil.isRefreshToken(actualToken)) {
-            return Mono.error(new BusinessException(400, "请提供有效的Refresh Token"));
-        }
-
-        Long userId = jwtUtil.getUserIdFromToken(actualToken);
-        String userName = jwtUtil.getUserNameFromToken(actualToken);
-
-        // 计算旧Refresh Token剩余TTL，用于撤销
-        Claims oldClaims = jwtUtil.parseToken(actualToken);
-        long oldTtlMs = oldClaims.getExpiration().getTime() - System.currentTimeMillis();
-
-        return tokenBlacklistService.isBlacklisted(actualToken)
-                .flatMap(isBlacklisted -> {
-                    if (isBlacklisted) {
-                        return Mono.error(new BusinessException(401, "Refresh Token已失效，请重新登录"));
-                    }
-                    return tokenBlacklistService.isUserBlacklisted(userId);
-                })
-                .flatMap(isUserBlacklisted -> {
-                    if (Boolean.TRUE.equals(isUserBlacklisted)) {
-                        return Mono.error(new BusinessException(401, "用户已被禁用，请联系管理员"));
-                    }
-
-                    Mono<List<String>> rolesMono = roleService.findRoleCodesByUserId(userId).collectList();
-                    Mono<List<String>> permsMono = menuService.findPermissionCodesByUserId(userId).collectList();
-
-                    return Mono.zip(rolesMono, permsMono)
-                            .flatMap(tuple -> {
-                                List<String> roles = tuple.getT1();
-                                List<String> permissions = tuple.getT2();
-
-                                // 从Redis取pwdVer（不查DB）
-                                return userPermissionCacheService.getPwdVer(userId)
-                                        .flatMap(pwdVer -> {
-                                            Map<String, String> tokenPair =
-                                                    jwtUtil.generateTokenPair(userId, userName, pwdVer);
-
-                                            // 撤销旧Refresh Token + 刷新权限缓存
-                                            Mono<Boolean> revokeOld = oldTtlMs > 0
-                                                    ? tokenBlacklistService.addToBlacklist(actualToken,
-                                                    Duration.ofMillis(oldTtlMs))
-                                                    : Mono.just(true);
-
-                                            return revokeOld
-                                                    .then(userPermissionCacheService.cacheUserPermissions(
-                                                            userId, roles, permissions))
-                                                    .thenReturn(tokenPair);
-                                        });
-                            })
-                            .map(tokenPair -> {
-                                Map<String, Object> result = new HashMap<>();
-                                result.put("accessToken", tokenPair.get("accessToken"));
-                                result.put("refreshToken", tokenPair.get("refreshToken"));
-                                log.info("Access Token刷新成功, userId: {}", userId);
-                                return result;
-                            });
-                });
+        return Mono.defer(() -> {
+            String token = removeBearerPrefix(refreshToken);
+            if (!jwtUtil.validateToken(token) || !jwtUtil.isRefreshToken(token)) {
+                return Mono.error(new BusinessException(401, "请提供有效的Refresh Token"));
+            }
+            Claims claims = jwtUtil.parseToken(token);
+            Long userId = jwtUtil.getUserIdFromToken(token);
+            return tokenBlacklistService.isUserBlacklisted(userId).flatMap(blocked -> {
+                if (blocked) return Mono.error(new BusinessException(401, "用户已被禁用"));
+                return userService.findById(userId)
+                        .switchIfEmpty(Mono.error(new BusinessException(401, "用户不存在")))
+                        .flatMap(user -> {
+                            if (!Integer.valueOf(1).equals(user.getStatus())
+                                    || !Integer.valueOf(0).equals(user.getDelFlag())) {
+                                return Mono.error(new BusinessException(401, "用户已被禁用"));
+                            }
+                            long pwdVer = user.getPasswordLastChangedAt() == null ? 0L
+                                    : user.getPasswordLastChangedAt().toEpochSecond(ZoneOffset.UTC);
+                            if (claims.getIssuedAt() == null
+                                    || claims.getIssuedAt().toInstant().getEpochSecond() < pwdVer) {
+                                return Mono.error(new BusinessException(401, "密码已修改，请重新登录"));
+                            }
+                            return Mono.zip(roleService.findRoleCodesByUserId(userId).collectList(),
+                                            menuService.findPermissionCodesByUserId(userId).collectList())
+                                    .flatMap(permissions -> tokenBlacklistService.consumeRefreshToken(token,
+                                                    Duration.ofMillis(claims.getExpiration().getTime() - System.currentTimeMillis()))
+                                            .flatMap(consumed -> {
+                                                if (!consumed) return Mono.error(new BusinessException(401,
+                                                        "Refresh Token已使用或已撤销，请重新登录"));
+                                                return userPermissionCacheService.cacheUserPermissions(userId,
+                                                                permissions.getT1(), permissions.getT2())
+                                                        .then(userPermissionCacheService.cachePwdVer(userId, pwdVer))
+                                                        .then(Mono.fromSupplier(() -> {
+                                                            Map<String, String> pair = jwtUtil.generateTokenPair(
+                                                                    userId, user.getUserName(), pwdVer);
+                                                            Map<String, Object> result = new HashMap<>();
+                                                            result.putAll(pair);
+                                                            return result;
+                                                        }));
+                                            }));
+                        });
+            });
+        });
     }
 
     @Override

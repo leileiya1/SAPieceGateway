@@ -31,6 +31,9 @@ public interface TokenBlacklistService {
      */
     Mono<Boolean> isBlacklisted(String token);
 
+    /** Atomically consume a refresh token; only one concurrent request may succeed. */
+    Mono<Boolean> consumeRefreshToken(String token, Duration remainingLifetime);
+
     /**
      * 从黑名单中移除Token
      * 通常用于管理员解除限制

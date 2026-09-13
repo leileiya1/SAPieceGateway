@@ -20,21 +20,21 @@ public interface AdminService {
      *
      * @return IP黑名单
      */
-    List<String> getIpBlacklist();
+    Mono<List<String>> getIpBlacklist();
 
     /**
      * 添加IP到黑名单
      *
      * @param ip IP地址或CIDR
      */
-    void addToIpBlacklist(String ip);
+    Mono<Boolean> addToIpBlacklist(String ip);
 
     /**
      * 从黑名单中移除IP
      *
      * @param ip IP地址或CIDR
      */
-    void removeFromIpBlacklist(String ip);
+    Mono<Boolean> removeFromIpBlacklist(String ip);
 
     // ==================== IP白名单管理 ====================
 
@@ -43,21 +43,21 @@ public interface AdminService {
      *
      * @return IP白名单
      */
-    List<String> getIpWhitelist();
+    Mono<List<String>> getIpWhitelist();
 
     /**
      * 添加IP到白名单
      *
      * @param ip IP地址或CIDR
      */
-    void addToIpWhitelist(String ip);
+    Mono<Boolean> addToIpWhitelist(String ip);
 
     /**
      * 从白名单中移除IP
      *
      * @param ip IP地址或CIDR
      */
-    void removeFromIpWhitelist(String ip);
+    Mono<Boolean> removeFromIpWhitelist(String ip);
 
     // ==================== Token黑名单管理 ====================
 

@@ -9,6 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -46,11 +47,9 @@ public class TestController {
     public Mono<Result<Map<String, Object>>> createOrder(@RequestBody OrderRequest request) {
         log.info("创建订单请求, orderId: {}, amount: {}", request.getOrderId(), request.getAmount());
 
-        // 模拟订单创建逻辑
-        return Mono.fromCallable(() -> {
-                    // 模拟耗时操作
-                    Thread.sleep(100);
-
+        // 用非阻塞定时器模拟耗时操作，避免占用 Netty 事件循环线程。
+        return Mono.delay(Duration.ofMillis(100))
+                .map(ignored -> {
                     Map<String, Object> result = new HashMap<>();
                     result.put("orderId", request.getOrderId());
                     result.put("status", "SUCCESS");
@@ -102,11 +101,9 @@ public class TestController {
     public Mono<Result<Map<String, Object>>> submitPayment(@RequestBody PaymentRequest request) {
         log.info("提交支付请求, paymentId: {}, amount: {}", request.getPaymentId(), request.getAmount());
 
-        // 模拟支付处理逻辑
-        return Mono.fromCallable(() -> {
-                    // 模拟耗时操作
-                    Thread.sleep(200);
-
+        // 用非阻塞定时器模拟耗时操作，避免占用 Netty 事件循环线程。
+        return Mono.delay(Duration.ofMillis(200))
+                .map(ignored -> {
                     Map<String, Object> result = new HashMap<>();
                     result.put("paymentId", request.getPaymentId());
                     result.put("status", "SUCCESS");

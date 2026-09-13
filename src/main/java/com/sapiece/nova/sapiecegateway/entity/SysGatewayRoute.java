@@ -48,7 +48,7 @@ public class SysGatewayRoute {
      * 目标URI
      * 支持两种格式：
      * 1. http://localhost:8081 - 直接转发到指定地址
-     * 2. lb://user-service - 通过服务发现负载均衡（需要集成 Nacos）
+     * 2. lb://user-service - 通过 Kubernetes Service DNS 动态负载均衡
      */
     @Column("uri")
     private String uri;
