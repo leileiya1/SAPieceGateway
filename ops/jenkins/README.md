@@ -14,9 +14,9 @@ Required host setup is intentionally outside the pipeline:
   authenticated school, Ubuntu worker (`10.65.13.94`), and
   `[ssh.github.com]:443` host keys; verify a worker key against
   `/etc/ssh/ssh_host_ed25519_key.pub` on that worker before installing it;
-- `controller-ssh-config` routes the controller's GitHub SSH connection through
-  `school-linux`, so loading the `Jenkinsfile` does not depend on Ubuntu's
-  unstable direct Internet path;
+- the public repository uses credential-free HTTPS for both controller and
+  agent checkouts; `controller-ssh-config` remains an optional SSH fallback
+  through `school-linux` when Ubuntu cannot reach GitHub directly;
 - the `jenkins` account on each server uses key-only SSH;
 - only `k3s` commands are passwordless for the Jenkins account;
 - `school-linux` has Docker group access and one Jenkins executor;
@@ -31,8 +31,9 @@ deployment or integration tests fail. The controller reads `Jenkinsfile` over
 the proxied SSH path, while the school agent checks out the public repository
 over HTTPS with a bounded retry.
 
-`job.xml` is the controller-side Pipeline job definition. It checks out
-`master` through `ssh.github.com:443` with the `github-ssh` credential, loads the
-repository `Jenkinsfile`, and polls every five minutes even before the first
-successful Pipeline run has registered the GitHub push trigger. Go validation
-uses persistent module/build caches and retries transient proxy failures.
+`job.xml` is the controller-side Pipeline job definition. It checks out the
+public `master` branch over HTTPS without a credential, loads the repository
+`Jenkinsfile`, and polls every five minutes even before the first successful
+Pipeline run has registered the GitHub push trigger. Go validation uses
+persistent module/build caches, pinned tool images, and reuses verified local
+images before attempting a registry pull.

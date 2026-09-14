@@ -21,8 +21,7 @@
       <configVersion>2</configVersion>
       <userRemoteConfigs>
         <hudson.plugins.git.UserRemoteConfig>
-          <url>ssh://git@ssh.github.com:443/leileiya1/SAPieceGateway.git</url>
-          <credentialsId>github-ssh</credentialsId>
+          <url>https://github.com/leileiya1/SAPieceGateway.git</url>
         </hudson.plugins.git.UserRemoteConfig>
       </userRemoteConfigs>
       <branches>
