@@ -27,10 +27,15 @@ def kubectl(*args: str, stdin: str | None = None, check: bool = True) -> subproc
 def raw_gateway(path: str, token: str) -> tuple[int, str]:
     request = urllib.request.Request(api.BASE + path, headers={"Authorization": "Bearer " + token})
     try:
-        with urllib.request.urlopen(request, timeout=10) as response:
+        # Route refresh and kube-proxy convergence are asynchronous across
+        # gateway replicas. Keep each probe bounded so one stale connection
+        # cannot consume the entire readiness window.
+        with urllib.request.urlopen(request, timeout=3) as response:
             return response.status, response.read().decode()
     except urllib.error.HTTPError as error:
         return error.code, error.read().decode(errors="replace")
+    except (urllib.error.URLError, TimeoutError, OSError) as error:
+        return 0, f"{type(error).__name__}: {error}"
 
 
 def backend_manifest() -> str:
