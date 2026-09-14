@@ -24,7 +24,10 @@ sed -E -i \
 grep -q "image: sapiece-gateway:$tag" "$rendered_manifest"
 grep -q "image: sapiece-grpc-echo:$tag" "$rendered_manifest"
 grep -q "image: sapiece-grpc-transcoder:$tag" "$rendered_manifest"
-"${kubectl[@]}" apply --server-side --dry-run=server -f "$rendered_manifest" >/dev/null
+# Validate with the API server using the same client-side apply mode as the real
+# update. Existing resources were bootstrapped in this mode, so this also checks
+# their current field ownership and immutable fields without mutating them.
+"${kubectl[@]}" apply --dry-run=server -f "$rendered_manifest" >/dev/null
 "${kubectl[@]}" apply -f "$rendered_manifest"
 "${kubectl[@]}" -n sapiece rollout status deployment/sapiece-gateway --timeout=360s
 "${kubectl[@]}" -n sapiece rollout status deployment/grpc-echo --timeout=240s
