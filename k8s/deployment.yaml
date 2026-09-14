@@ -13,9 +13,8 @@ spec:
   strategy:
     type: RollingUpdate
     rollingUpdate:
-      # Keep full capacity during upgrades. The soft spread constraint below
-      # still favors one Pod per node, but allows both replicas on the surviving
-      # node when a server is unavailable.
+      # Keep full capacity during upgrades. The hard topology spread constraint
+      # guarantees that the two steady-state replicas use different nodes.
       maxSurge: 1
       maxUnavailable: 0
   template:
@@ -36,7 +35,7 @@ spec:
       topologySpreadConstraints:
         - maxSkew: 1
           topologyKey: kubernetes.io/hostname
-          whenUnsatisfiable: ScheduleAnyway
+          whenUnsatisfiable: DoNotSchedule
           labelSelector:
             matchLabels:
               app: sapiece-gateway

@@ -96,6 +96,16 @@ def wait_for_proxy(admin_token: str, timeout: int = 60) -> None:
     raise AssertionError(f"Kubernetes lb:// route did not become ready: {last}")
 
 
+def assert_gateway_spans_nodes() -> None:
+    nodes = kubectl(
+        "get", "pod", "-l", "app=sapiece-gateway",
+        "-o", "jsonpath={range .items[*]}{.spec.nodeName}{'\\n'}{end}",
+    ).stdout.splitlines()
+    if len(nodes) < 2 or len(set(nodes)) < 2:
+        raise AssertionError(f"Gateway replicas are not spread across two nodes: {nodes}")
+    print("PASS gateway replicas span two K3s nodes", flush=True)
+
+
 def run() -> None:
     api.seed()
     created = False
@@ -103,6 +113,7 @@ def run() -> None:
     admin_token = ""
     route_id = api.PREFIX + "_lb_route"
     try:
+        assert_gateway_spans_nodes()
         login = api.ok("K3s LB admin login", api.request(
             "POST", "/auth/login", body={"userName": api.ADMIN_NAME, "password": api.ADMIN_PASSWORD}))
         admin_token = login["data"]["accessToken"]
