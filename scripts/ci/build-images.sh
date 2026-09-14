@@ -23,11 +23,11 @@ retry() {
 exec 9>/tmp/sapiece-native-build.lock
 flock -w 7200 9
 cd "$repo_root"
-retry docker build --pull --build-arg "NATIVE_BUILD_CPUS=$cpus" \
+retry docker build --build-arg "NATIVE_BUILD_CPUS=$cpus" \
   -f Dockerfile.k3s -t "sapiece-gateway:$tag" .
-retry docker build --pull --target server \
+retry docker build --target server \
   -t "sapiece-grpc-echo:$tag" examples/grpc-echo
-retry docker build --pull --target transcoder \
+retry docker build --target transcoder \
   -t "sapiece-grpc-transcoder:$tag" examples/grpc-echo
 docker image inspect "sapiece-gateway:$tag" "sapiece-grpc-echo:$tag" \
   "sapiece-grpc-transcoder:$tag" > "$dist/image-metadata.json"
